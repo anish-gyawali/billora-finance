@@ -1,0 +1,316 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                  String   @id @default(uuid())
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now())
+  email               String   @unique
+  name                String
+  password_hash       String
+  role                UserRole
+  bank_account_number String
+  pan_number          String?
+  monthly_salary      Decimal? @db.Decimal(14, 2)
+  is_active           Boolean  @default(true)
+  mfa_secret          String?
+}
+
+enum UserRole {
+  founder
+  accountant
+  member
+}
+
+model Account {
+  id             String        @id @default(uuid())
+  created_at     DateTime      @default(now())
+  updated_at     DateTime      @default(now())
+  code           String        @unique
+  name           String
+  type           AccountType
+  parent_id      String?
+  normal_balance NormalBalance
+  is_active      Boolean
+}
+
+enum AccountType {
+  asset
+  liability
+  equity
+  revenue
+  expense
+}
+
+enum NormalBalance {
+  debit
+  credit
+}
+
+model AccountingPeriod {
+  id           String       @id @default(uuid())
+  created_at   DateTime     @default(now())
+  updated_at   DateTime     @default(now())
+  period_start DateTime
+  period_end   DateTime
+  status       PeriodStatus
+
+  @@unique([period_start, period_end])
+}
+
+enum PeriodStatus {
+  open
+  closed
+}
+
+model JournalEntry {
+  id                String      @id @default(uuid())
+  created_at        DateTime    @default(now())
+  updated_at        DateTime    @default(now())
+  entry_date        DateTime
+  period_id         String
+  status            EntryStatus
+  source_type       SourceType
+  source_id         String?
+  reversed_entry_id String?
+  memo              String?
+  created_by        String
+}
+
+enum EntryStatus {
+  draft
+  posted
+  reversed
+}
+
+enum SourceType {
+  expense
+  invoice
+  payment
+  salary_run
+  manual
+  reversal
+}
+
+model JournalLine {
+  id               String   @id @default(uuid())
+  created_at       DateTime @default(now())
+  updated_at       DateTime @default(now())
+  journal_entry_id String
+  account_id       String
+  debit            Decimal  @default(0) @db.Decimal(14, 2)
+  credit           Decimal  @default(0) @db.Decimal(14, 2)
+  description      String?
+}
+
+model Client {
+  id            String   @id @default(uuid())
+  created_at    DateTime @default(now())
+  updated_at    DateTime @default(now())
+  name          String
+  country       String
+  pan_number    String?
+  billing_email String
+  currency      String   @default("USD")
+}
+
+model Invoice {
+  id                   String        @id @default(uuid())
+  created_at           DateTime      @default(now())
+  updated_at           DateTime      @default(now())
+  client_id            String
+  invoice_number       String        @unique
+  invoice_date         DateTime
+  due_date             DateTime
+  currency             String
+  exchange_rate_to_npr Decimal?      @db.Decimal(10, 4)
+  status               InvoiceStatus
+  total_amount         Decimal       @db.Decimal(14, 2)
+  paid_amount          Decimal       @default(0) @db.Decimal(14, 2)
+  journal_entry_id     String?
+}
+
+model InvoiceItem {
+  id          String   @id @default(uuid())
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+  invoice_id  String
+  description String
+  quantity    Int
+  rate        Decimal  @db.Decimal(14, 2)
+  amount      Decimal  @db.Decimal(14, 2)
+  vat_amount  Decimal? @db.Decimal(14, 2)
+}
+
+enum InvoiceStatus {
+  draft
+  sent
+  partially_paid
+  paid
+  overdue
+  void
+}
+
+model Vendor {
+  id           String   @id @default(uuid())
+  created_at   DateTime @default(now())
+  updated_at   DateTime @default(now())
+  name         String
+  pan_number   String?
+  vat_number   String?
+  contact_info String?
+}
+
+model Expense {
+  id                 String        @id @default(uuid())
+  created_at         DateTime      @default(now())
+  updated_at         DateTime      @default(now())
+  expense_date       DateTime
+  vendor_id          String?
+  paid_by_user_id    String?
+  payment_account_id String?
+  status             ExpenseStatus
+  approved_by        String?
+  total_amount       Decimal       @db.Decimal(14, 2)
+  journal_entry_id   String?
+}
+
+model ExpenseItem {
+  id          String   @id @default(uuid())
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+  expense_id  String
+  account_id  String
+  description String
+  amount      Decimal  @db.Decimal(14, 2)
+  vat_amount  Decimal? @db.Decimal(14, 2)
+  tds_amount  Decimal? @db.Decimal(14, 2)
+}
+
+enum ExpenseStatus {
+  draft
+  approved
+  posted
+  reversed
+}
+
+model Payment {
+  id                String           @id @default(uuid())
+  created_at        DateTime         @default(now())
+  updated_at        DateTime         @default(now())
+  direction         PaymentDirection
+  amount            Decimal          @db.Decimal(14, 2)
+  currency          String
+  payment_date      DateTime
+  account_id        String
+  method            PaymentMethod
+  allocated_to_type String
+  allocated_to_id   String?
+  journal_entry_id  String?
+}
+
+enum PaymentDirection {
+  in
+  out
+}
+
+enum PaymentMethod {
+  bank_transfer
+  cash
+  international_wire
+  other
+}
+
+model SalaryRun {
+  id               String       @id @default(uuid())
+  created_at       DateTime     @default(now())
+  updated_at       DateTime     @default(now())
+  period_start     DateTime
+  period_end       DateTime
+  status           SalaryStatus
+  journal_entry_id String?
+  approved_by      String?
+}
+
+model SalaryItem {
+  id            String   @id @default(uuid())
+  created_at    DateTime @default(now())
+  updated_at    DateTime @default(now())
+  salary_run_id String
+  user_id       String
+  gross_amount  Decimal  @db.Decimal(14, 2)
+  tds_amount    Decimal  @db.Decimal(14, 2)
+  net_amount    Decimal  @db.Decimal(14, 2)
+  paid          Boolean  @default(false)
+}
+
+enum SalaryStatus {
+  draft
+  approved
+  posted
+  paid
+}
+
+model TaxRule {
+  id                     String    @id @default(uuid())
+  created_at             DateTime  @default(now())
+  updated_at             DateTime  @default(now())
+  tax_type               TaxType
+  rate                   Decimal   @db.Decimal(5, 2)
+  effective_from         DateTime
+  effective_to           DateTime?
+  notes                  String?
+  verified_by_accountant Boolean   @default(false)
+}
+
+enum TaxType {
+  vat
+  tds_service
+  tds_salary
+  tds_rent
+}
+
+model Document {
+  id          String   @id @default(uuid())
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now())
+  owner_type  String
+  owner_id    String
+  file_name   String
+  storage_key String
+  mime_type   String
+  uploaded_by String
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  created_at  DateTime @default(now())
+  user_id     String?
+  action      String
+  entity_type String
+  entity_id   String
+  old_value   Json?
+  new_value   Json?
+}
+
+model BankAccount {
+  id             String   @id @default(uuid())
+  created_at     DateTime @default(now())
+  updated_at     DateTime @default(now())
+  name           String
+  bank_name      String
+  account_number String
+  currency       String
+  gl_account_id  String   @unique
+}
