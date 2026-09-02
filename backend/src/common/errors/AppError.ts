@@ -1,15 +1,25 @@
 import type { ApiErrorDetail } from "../types/index.js";
 
+export enum ErrorCodes {
+  VALIDATION_ERROR = "VALIDATION_ERROR",
+  CONFLICT = "CONFLICT", // Email/PAN exists
+  UNAUTHORIZED = "UNAUTHORIZED",
+  FORBIDDEN = "FORBIDDEN",
+  NOT_FOUND = "NOT_FOUND",
+  BAD_REQUEST = "BAD_REQUEST",
+  INTERNAL = "INTERNAL_ERROR",
+}
+
 export class AppError extends Error {
   public readonly statusCode: number;
   public readonly code: string;
   public readonly isOperational: boolean;
-  public readonly details?: ApiErrorDetail[];
+  public readonly details?: ApiErrorDetail[] | undefined;
 
   constructor(
     message: string,
     statusCode: number = 500,
-    code: string = "INTERNAL_SERVER_ERROR",
+    code: string | ErrorCodes = ErrorCodes.INTERNAL,
     isOperational: boolean = true,
     details?: ApiErrorDetail[]
   ) {
@@ -19,6 +29,7 @@ export class AppError extends Error {
     this.code = code;
     this.isOperational = isOperational;
     this.details = details;
+    Object.setPrototypeOf(this, new.target.prototype);
     Error.captureStackTrace(this, this.constructor);
   }
 }
@@ -62,5 +73,21 @@ export class ConflictError extends AppError {
 export class InternalServerError extends AppError {
   constructor(message: string = "Internal server error") {
     super(message, 500, "INTERNAL_SERVER_ERROR", false);
+  }
+}
+
+export class EmailAlreadyExistsError extends ConflictError {
+  constructor(email?: string) {
+    super(
+      email
+        ? `A user with email '${email}' already exists`
+        : "A user with this email already exists"
+    );
+  }
+}
+
+export class WeakPasswordError extends ValidationError {
+  constructor(message: string = "Password does not meet complexity requirements") {
+    super(message);
   }
 }

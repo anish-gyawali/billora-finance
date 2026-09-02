@@ -5,12 +5,11 @@
 
 generator client {
   provider = "prisma-client"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
 }
 
 model User {
@@ -26,6 +25,23 @@ model User {
   monthly_salary      Decimal? @db.Decimal(14, 2)
   is_active           Boolean  @default(true)
   mfa_secret          String?
+  refreshTokens RefreshToken[]
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid())
+  userId     String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+  revokedAt  DateTime?
+  ipAddress  String?
+  userAgent  String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 enum UserRole {
@@ -33,6 +49,7 @@ enum UserRole {
   accountant
   member
 }
+
 
 model Account {
   id             String        @id @default(uuid())

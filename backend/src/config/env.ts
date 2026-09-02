@@ -11,7 +11,16 @@ const envSchema = z.object({
   JWT_ACCESS_SECRET: z.string().min(16, "JWT_ACCESS_SECRET must be at least 16 characters"),
   JWT_REFRESH_SECRET: z.string().min(16, "JWT_REFRESH_SECRET must be at least 16 characters"),
   COOKIE_SECRET: z.string().min(16, "COOKIE_SECRET must be at least 16 characters"),
+  COOKIE_DOMAIN: z.string().optional(),
+  TRUST_PROXY: z
+    .union([z.boolean(), z.string()])
+    .default("true")
+    .transform((val) => {
+      if (typeof val === "boolean") return val;
+      return val === "true" || val === "1";
+    }),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
+  BCRYPT_SALT_ROUNDS: z.coerce.number().default(12),
 });
 
 const parseEnv = () => {

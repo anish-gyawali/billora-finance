@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction, ErrorRequestHandler } from "express";
 import { ZodError } from "zod";
-import { AppError } from "../error/appError.js";
+import { AppError } from "../errors/AppError.js";
 import { logger } from "../../config/logger.js";
 import { env } from "../../config/env.js";
 import type { ApiErrorDetail, ApiErrorResponse } from "../types/index.js";

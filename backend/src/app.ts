@@ -8,8 +8,12 @@ import { httpLogger } from "./config/logger.js";
 import { apiLimiter } from "./common/middleware/rateLimiter.js";
 import { errorHandler, notFoundHandler } from "./common/middleware/errorHandler.js";
 import { checkDatabaseHealth } from "./lib/prisma.js";
+import { registerRoutes } from "./modules/auth/register/register.routes.js";
 
 export const app: Express = express();
+
+// 1. Trust Proxy (CRITICAL for req.ip, req.secure, req.hostname behind reverse proxies)
+app.set("trust proxy", env.TRUST_PROXY);
 
 // Security headers
 app.use(helmet());
@@ -34,6 +38,10 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // Rate limiting for API routes
 app.use("/api", apiLimiter);
+
+// Auth routes
+app.use("/api/auth", registerRoutes);
+app.use("/auth", registerRoutes);
 
 // Liveness / Readiness health check endpoint
 app.get("/api/health", async (_req, res) => {

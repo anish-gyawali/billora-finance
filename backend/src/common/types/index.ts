@@ -15,8 +15,8 @@ export interface ApiErrorResponse {
   error: {
     code: string;
     message: string;
-    details?: ApiErrorDetail[];
-    requestId?: string;
+    details?: ApiErrorDetail[] | undefined;
+    requestId?: string | undefined;
   };
 }
 
