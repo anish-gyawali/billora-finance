@@ -19,6 +19,7 @@ import { registerRoutes } from "./modules/auth/register/register.routes.js";
 import { loginRoutes } from "./modules/auth/login/login.routes.js";
 import { logoutRoutes } from "./modules/auth/logout/logout.routes.js";
 import { refreshRoutes } from "./modules/auth/token/refresh.routes.js";
+import { accountRoutes } from "./modules/accounts/account.routes.js";
 
 export const app: Express = express();
 
@@ -65,6 +66,10 @@ app.use("/auth", registerRoutes);
 app.use("/auth", loginRoutes);
 app.use("/auth", logoutRoutes);
 app.use("/auth", refreshRoutes);
+
+// Chart of accounts
+app.use("/api/accounts", accountRoutes);
+app.use("/api/chart-of-accounts", accountRoutes);
 
 // ─── Protected Route: Current User Profile ────────────────────────────────────
 // GET /api/auth/me  →  returns the authenticated user's SafeUser profile
@@ -139,4 +144,3 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 export default app;
-

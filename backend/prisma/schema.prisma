@@ -60,7 +60,13 @@ model Account {
   type           AccountType
   parent_id      String?
   normal_balance NormalBalance
-  is_active      Boolean
+  is_active      Boolean       @default(true)
+
+  parent         Account?      @relation("AccountHierarchy", fields: [parent_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  children       Account[]     @relation("AccountHierarchy")
+  journal_lines  JournalLine[]
+
+  @@index([parent_id])
 }
 
 enum AccountType {
@@ -104,6 +110,8 @@ model JournalEntry {
   reversed_entry_id String?
   memo              String?
   created_by        String
+
+  lines             JournalLine[]
 }
 
 enum EntryStatus {
@@ -130,6 +138,12 @@ model JournalLine {
   debit            Decimal  @default(0) @db.Decimal(14, 2)
   credit           Decimal  @default(0) @db.Decimal(14, 2)
   description      String?
+
+  journal_entry JournalEntry @relation(fields: [journal_entry_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  account       Account      @relation(fields: [account_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([account_id])
+  @@index([journal_entry_id])
 }
 
 model Client {
