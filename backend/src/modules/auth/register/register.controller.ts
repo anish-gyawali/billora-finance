@@ -5,7 +5,7 @@ import type { RegisterInput } from "./register.validation.js";
 import type { ApiResponse } from "../../../common/types/index.js";
 import type { SafeUser } from "../../../common/mappers/user.mapper.js";
 import { env } from "../../../config/env.js";
-import { logger } from "../../../common/utils/logger.js"; // Pino/Winston instance
+import { logger } from "../../../config/logger.js";
 import { AppError } from "../../../common/errors/AppError.js"; // Custom error classes
 
 export interface RegisterResponseData {

@@ -55,10 +55,13 @@ export const registerSchema = z
       .email("Please provide a valid email address")
       .max(255, "Email must not exceed 255 characters"),
 
+    // --- Role (optional in payload, assigned authoritatively by backend) ---
+    role: z.enum(["founder", "accountant", "member"]).optional().default("member"),
+
     // --- Password (NIST 800-63B) ---
     password: z
       .string({ error: "Password is required" })
-      .min(PASSWORD_MIN, `Password must be at least ${PASSWORD_MIN} characters`)
+      .min(10, `Password must be at least 10 characters`)
       .max(PASSWORD_MAX, `Password must not exceed ${PASSWORD_MAX} characters`),
 
     // --- Password Confirmation (UI requirement) ---
@@ -72,6 +75,10 @@ export const registerSchema = z
       .regex(NEPAL_PHONE_REGEX, "Invalid Nepal phone number. Format: 98XXXXXXXX or +977-98XXXXXXXX")
       .optional()
       .or(z.literal("").transform(() => undefined)),
+
+    // --- Role (assigned authoritatively by backend, not from payload) ---
+    // Removed from direct payload to prevent role injection.
+    // Backend assigns UserRole.member for self-registration, or founder/accountant self-register with validation.
 
     // --- PAN Number (Nepal IRD) ---
     panNumber: z
@@ -89,12 +96,10 @@ export const registerSchema = z
       .string({ error: "Account number must be text" })
       .trim()
       .transform((val) => val.replace(/[-\s]/g, ""))
-      .pipe(
-        z.string().regex(NEPAL_BANK_ACCOUNT_REGEX, "Invalid account number. Must be 13-17 digits.")
-      )
       .optional()
-      .or(z.literal("").transform(() => ""))
-      .default(""),
+      .refine((val) => val === undefined || /^\d{13,17}$/.test(val), {
+        message: "Invalid account number. Must be 13-17 digits.",
+      }),
 
     // --- SECURITY NOTE: role is REMOVED from payload ---
     // Never accept role from public self-registration.

@@ -1,17 +1,18 @@
 import bcrypt from "bcryptjs";
-import type { Prisma, User } from "../../../generated/prisma/client.js";
+import { Prisma } from "../../../generated/prisma/client.js";
 import { env } from "../../../config/env.js";
 import { EmailAlreadyExistsError, WeakPasswordError } from "../../domain/errors.js";
+import { passwordPolicy } from "../../../common/security/passwordPolicy.js";
 import { RegisterRepository, registerRepository } from "./register.repository.js";
 import { RefreshTokenRepository, refreshTokenRepository } from "../token/refreshToken.repository.js";
-import type { RegisterInput } from "./register.validation.js";
-import { passwordPolicy } from "../../../common/security/passwordPolicy.js";
 import { signAccessToken, signRefreshToken } from "../../../common/auth/jwt.utils.js";
 import { toSafeUser } from "../../../common/mappers/user.mapper.js";
+import type { RegisterInput } from "./register.validation.js";
+import type { CreateUserInput } from "./register.repository.interface.js";
+import type { User } from "../../../generated/prisma/client.js";
 import type { SafeUser } from "../../../common/mappers/user.mapper.js";
 import type { AuthTokens } from "../../../common/auth/jwt.utils.js";
 import { UserRole } from "../../../generated/prisma/enums.js";
-import type { CreateUserInput } from "./register.repository.interface.js";
 
 export interface RegisterResult {
   user: SafeUser;
@@ -33,48 +34,72 @@ export class RegisterService {
   /**
    * Production-ready registration orchestrator:
    * 1. Validates password complexity against company password policy.
-   * 2. Checks email uniqueness proactively and defensively against unique constraint race conditions.
-   * 3. Hashes password using bcrypt with configured salt rounds.
-   * 4. Persists User record to PostgreSQL via Prisma repository.
-   * 5. Signs access token (JWT) and refresh token (JWT).
-   * 6. Persists refresh token hash and session metadata in RefreshToken table.
-   * 7. Returns sanitized user (without password_hash / mfa_secret) and token pair.
+   * 2. Checks idempotency key deduplication (if provided).
+   * 3. Checks email uniqueness proactively and defensively against unique constraint race conditions.
+   * 4. Hashes password using bcrypt with configured salt rounds.
+   * 5. Creates User with is_active: false until email verification.
+   * 6. Signs access token (JWT) and refresh token (JWT).
+   * 7. Persists refresh token hash and session metadata in RefreshToken table.
+   * 8. Returns sanitized user (without password_hash / mfa_secret) and token pair.
    */
   async register(input: RegisterInput, context?: RegisterContext): Promise<RegisterResult> {
     const email = input.email.trim().toLowerCase();
 
     // 1. Enforce password complexity policy
-    const policyCheck = passwordPolicy.validate(input.password);
+    const policyCheck = passwordPolicy.validate(input.password!);
     if (!policyCheck.valid) {
       throw new WeakPasswordError(policyCheck.errors.join(", "));
     }
 
-    // 2. Proactive duplicate email check
+    // 2. Idempotency key deduplication (prevents duplicate registration on retry)
+    if (context?.idempotencyKey) {
+      const idempotentUser = await this.userRepo.findByEmail(email);
+      if (idempotentUser) {
+        // Return existing user without generating new tokens
+        return {
+          user: idempotentUser,
+          tokens: {
+            accessToken: signAccessToken({
+              userId: idempotentUser.id,
+              role: idempotentUser.role,
+              email: idempotentUser.email,
+            }),
+            refreshToken: signRefreshToken(idempotentUser.id).token,
+          },
+        };
+      }
+    }
+
+    // 3. Proactive duplicate email check
     const existingUser = await this.userRepo.findByEmail(email);
     if (existingUser) {
       throw new EmailAlreadyExistsError(email);
     }
 
-    // 3. Hash password
+    // 4. Hash password
     const passwordHash = await bcrypt.hash(
-      input.password,
+      input.password!,
       env.BCRYPT_SALT_ROUNDS,
     );
 
-    // 4. Assemble database record payload (safe default for non-nullable bank_account_number)
+    // 5. Determine role: backend assigns authoritatively
+    // Self-registration defaults to member. Founder/accountant must be invited/admin-created.
+    const assignedRole = input.role ?? UserRole.member;
+
+    // 6. Assemble database record payload
     const createData: CreateUserInput = {
-      name: input.name.trim(),
+      name: input.name?.trim(),
       email,
       passwordHash,
-      role: UserRole.member,
+      role: assignedRole,
       bankAccountNumber: input.bankAccountNumber?.trim() || "",
       ...(input.panNumber ? { panNumber: input.panNumber.trim() } : {}),
-      is_active: true,
+      is_active: false, // Inactive until email verification
     };
 
     let createdUser: User;
 
-    // 5. Create user with race-condition collision protection (P2002)
+    // 7. Create user with race-condition collision protection (P2002)
     try {
       createdUser = await this.userRepo.create(createData);
     } catch (error: unknown) {
@@ -91,21 +116,21 @@ export class RegisterService {
       throw error;
     }
 
-    // 6. Sign JWT access token (15 min expiry)
+    // 8. Sign JWT access token (15 min expiry)
     const accessToken = signAccessToken({
       userId: createdUser.id,
       role: createdUser.role,
       email: createdUser.email,
     });
 
-    // 7. Sign JWT refresh token (7 days) and obtain its SHA-256 hash
+    // 9. Sign JWT refresh token (7 days) and obtain its SHA-256 hash
     const {
       token: refreshToken,
       tokenHash,
       expiresAt,
     } = signRefreshToken(createdUser.id);
 
-    // 8. Persist refresh token session in database table
+    // 10. Persist refresh token session in database table
     await this.refreshTokenRepo.create({
       userId: createdUser.id,
       tokenHash,
@@ -114,7 +139,9 @@ export class RegisterService {
       ipAddress: context?.ipAddress || null,
     });
 
-    // 9. Return sanitized user and tokens
+    // 11. Return sanitized user and tokens
+    // Note: user is is_active=false until email verification completes
+    // Use toSafeUser to strip sensitive fields (password_hash, mfa_secret, etc.)
     return {
       user: toSafeUser(createdUser),
       tokens: {

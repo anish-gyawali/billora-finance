@@ -1,6 +1,6 @@
 import { Prisma } from "../../../generated/prisma/client.js";
 import { prisma } from "../../../lib/prisma.js";
-import { logger } from "../../../lib/logger.js";
+import { logger } from "../../../config/logger.js";
 import { ConflictError, InternalServerError } from "../../../domain/errors.js";
 import type { IRegisterRepository, CreateUserInput } from "./register.repository.interface.js";
 import type { User } from "../../../generated/prisma/client.js";
@@ -27,8 +27,10 @@ export class RegisterRepository implements IRegisterRepository {
 
   /**
    * Creates a new user.
-   * Enforces password_hash presence (defense in depth).
+   * Enforces password_hash presence at boundary.
    * Handles P2002 (Unique Constraint) race conditions gracefully.
+   * Note: Password length is validated in the schema (min 10 chars),
+   * so this guard is defense-in-depth only.
    */
   async create(data: CreateUserInput): Promise<User> {
     const passwordHash = data.password_hash || data.passwordHash || "";
@@ -42,23 +44,21 @@ export class RegisterRepository implements IRegisterRepository {
       throw new InternalServerError("Invalid password hash provided");
     }
 
-    const payload: Prisma.UserCreateInput = {
-      email: data.email.toLowerCase().trim(),
-      password_hash: passwordHash,
-      name: data.name?.trim() || "",
-      role: data.role ?? UserRole.member,
-      bank_account_number: data.bank_account_number || data.bankAccountNumber || "",
-      ...(data.pan_number || data.panNumber
-        ? { pan_number: (data.pan_number || data.panNumber)!.trim() }
-        : {}),
-      is_active: data.is_active ?? true,
-    };
-
-    logger.info({ email: payload.email }, "Attempting to create new user");
+    logger.info({ email: data.email }, "Attempting to create new user");
 
     try {
       const user = await prisma.user.create({
-        data: payload,
+        data: {
+          email: data.email.toLowerCase().trim(),
+          password_hash: passwordHash,
+          name: data.name?.trim() || "",
+          role: data.role ?? UserRole.member,
+          bank_account_number: data.bank_account_number || data.bankAccountNumber || "",
+          ...(data.pan_number || data.panNumber
+            ? { pan_number: (data.pan_number || data.panNumber)!.trim() }
+            : {}),
+          is_active: data.is_active ?? true,
+        },
       });
 
       logger.info({ userId: user.id, email: user.email }, "User created successfully");
@@ -72,12 +72,12 @@ export class RegisterRepository implements IRegisterRepository {
         (error as { code: string }).code === "P2002";
 
       if (isPrismaKnown) {
-        logger.warn({ email: payload.email }, "Registration conflict: Email already exists");
+        logger.warn({ email: data.email }, "Registration conflict: Email already exists");
         throw new ConflictError("Email address is already registered");
       }
 
       // 3. Generic Fallback
-      logger.error({ err: error, email: payload.email }, "Failed to create user");
+      logger.error({ err: error, email: data.email }, "Failed to create user");
       throw new InternalServerError("Could not create user account");
     }
   }
