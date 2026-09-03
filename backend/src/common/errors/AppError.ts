@@ -91,3 +91,13 @@ export class WeakPasswordError extends ValidationError {
     super(message);
   }
 }
+
+export class EmailNotFoundError extends NotFoundError {
+  constructor(email?: string) {
+    super(
+      email
+        ? `User with email '${email}' not found`
+        : "User not found with provided email"
+    );
+  }
+}

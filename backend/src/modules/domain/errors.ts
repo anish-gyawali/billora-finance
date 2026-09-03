@@ -1,5 +1,6 @@
 export {
   EmailAlreadyExistsError,
+  EmailNotFoundError,
   WeakPasswordError,
   ConflictError,
   InternalServerError,
