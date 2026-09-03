@@ -20,6 +20,7 @@ import { loginRoutes } from "./modules/auth/login/login.routes.js";
 import { logoutRoutes } from "./modules/auth/logout/logout.routes.js";
 import { refreshRoutes } from "./modules/auth/token/refresh.routes.js";
 import { accountRoutes } from "./modules/accounts/account.routes.js";
+import { periodRoutes } from "./modules/periods/period.routes.js";
 
 export const app: Express = express();
 
@@ -67,9 +68,16 @@ app.use("/auth", loginRoutes);
 app.use("/auth", logoutRoutes);
 app.use("/auth", refreshRoutes);
 
-// Chart of accounts
-app.use("/api/accounts", accountRoutes);
+// ─── Financial & Accounting Modules ──────────────────────────────────────────
+// Chart of Accounts (/api/chart-of-accounts & /api/accounts)
 app.use("/api/chart-of-accounts", accountRoutes);
+app.use("/api/accounts", accountRoutes);
+app.use("/chart-of-accounts", accountRoutes);
+app.use("/accounts", accountRoutes);
+
+// Accounting Periods (/api/periods & /periods)
+app.use("/api/periods", periodRoutes);
+app.use("/periods", periodRoutes);
 
 // ─── Protected Route: Current User Profile ────────────────────────────────────
 // GET /api/auth/me  →  returns the authenticated user's SafeUser profile
@@ -131,6 +139,8 @@ app.get("/", (_req, res) => {
         logout: "/api/auth/logout",
         refresh: "/api/auth/refresh",
         me: "/api/auth/me",
+        chartOfAccounts: "/api/chart-of-accounts",
+        periods: "/api/periods",
       },
     },
   });

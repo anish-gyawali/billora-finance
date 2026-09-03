@@ -88,7 +88,9 @@ model AccountingPeriod {
   updated_at   DateTime     @default(now())
   period_start DateTime
   period_end   DateTime
-  status       PeriodStatus
+  status       PeriodStatus  @default(open)
+
+  journal_entries JournalEntry[]
 
   @@unique([period_start, period_end])
 }
@@ -112,6 +114,9 @@ model JournalEntry {
   created_by        String
 
   lines             JournalLine[]
+  period            AccountingPeriod @relation(fields: [period_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([period_id])
 }
 
 enum EntryStatus {
