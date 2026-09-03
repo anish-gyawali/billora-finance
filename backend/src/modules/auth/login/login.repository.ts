@@ -1,7 +1,7 @@
 import { Prisma } from "../../../generated/prisma/client.js";
 import { prisma } from "../../../lib/prisma.js";
 import { logger } from "../../../config/logger.js";
-import { InternalServerError } from "../../../domain/errors.js";
+import { InternalServerError } from "../../../common/errors/errors.js";
 import type { ILoginRepository, LoginInput } from "./login.repository.interface.js";
 import type { User } from "../../../generated/prisma/client.js";
 

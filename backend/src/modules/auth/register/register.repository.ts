@@ -1,7 +1,7 @@
 import { Prisma } from "../../../generated/prisma/client.js";
 import { prisma } from "../../../lib/prisma.js";
 import { logger } from "../../../config/logger.js";
-import { ConflictError, InternalServerError } from "../../../domain/errors.js";
+import { ConflictError, InternalServerError } from "../../../common/errors/errors.js";
 import type { IRegisterRepository, CreateUserInput } from "./register.repository.interface.js";
 import type { User } from "../../../generated/prisma/client.js";
 import { UserRole } from "../../../generated/prisma/enums.js";
