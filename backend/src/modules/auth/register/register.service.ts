@@ -51,42 +51,23 @@ export class RegisterService {
       throw new WeakPasswordError(policyCheck.errors.join(", "));
     }
 
-    // 2. Idempotency key deduplication (prevents duplicate registration on retry)
-    if (context?.idempotencyKey) {
-      const idempotentUser = await this.userRepo.findByEmail(email);
-      if (idempotentUser) {
-        // Return existing user without generating new tokens
-        return {
-          user: idempotentUser,
-          tokens: {
-            accessToken: signAccessToken({
-              userId: idempotentUser.id,
-              role: idempotentUser.role,
-              email: idempotentUser.email,
-            }),
-            refreshToken: signRefreshToken(idempotentUser.id).token,
-          },
-        };
-      }
-    }
-
-    // 3. Proactive duplicate email check
+    // 2. Proactive duplicate email check
     const existingUser = await this.userRepo.findByEmail(email);
     if (existingUser) {
       throw new EmailAlreadyExistsError(email);
     }
 
-    // 4. Hash password
+    // 3. Hash password
     const passwordHash = await bcrypt.hash(
       input.password!,
       env.BCRYPT_SALT_ROUNDS,
     );
 
-    // 5. Determine role: backend assigns authoritatively
-    // Self-registration defaults to member. Founder/accountant must be invited/admin-created.
-    const assignedRole = input.role ?? UserRole.member;
+    // 4. Determine role: backend assigns member authoritatively
+    // Self-registration is strictly restricted to member role.
+    const assignedRole = UserRole.member;
 
-    // 6. Assemble database record payload
+    // 5. Assemble database record payload
     const createData: CreateUserInput = {
       name: input.name?.trim(),
       email,
@@ -94,7 +75,7 @@ export class RegisterService {
       role: assignedRole,
       bankAccountNumber: input.bankAccountNumber?.trim() || "",
       ...(input.panNumber ? { panNumber: input.panNumber.trim() } : {}),
-      is_active: false, // Inactive until email verification
+      is_active: true,
     };
 
     let createdUser: User;

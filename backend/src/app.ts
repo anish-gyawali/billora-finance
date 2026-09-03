@@ -1,5 +1,5 @@
 import express from "express";
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
@@ -7,8 +7,18 @@ import { env } from "./config/env.js";
 import { httpLogger } from "./config/logger.js";
 import { apiLimiter } from "./common/middleware/rateLimiter.js";
 import { errorHandler, notFoundHandler } from "./common/middleware/errorHandler.js";
-import { checkDatabaseHealth } from "./lib/prisma.js";
+import { requireAuth } from "./common/middleware/auth.js";
+import { checkDatabaseHealth, prisma } from "./lib/prisma.js";
+import { toSafeUser } from "./common/mappers/user.mapper.js";
+import { NotFoundError } from "./common/errors/AppError.js";
+import type { ApiResponse } from "./common/types/index.js";
+import type { SafeUser } from "./common/mappers/user.mapper.js";
+
+// Auth route modules — each owns its own path (/register, /login, /logout, /refresh)
 import { registerRoutes } from "./modules/auth/register/register.routes.js";
+import { loginRoutes } from "./modules/auth/login/login.routes.js";
+import { logoutRoutes } from "./modules/auth/logout/logout.routes.js";
+import { refreshRoutes } from "./modules/auth/token/refresh.routes.js";
 
 export const app: Express = express();
 
@@ -39,10 +49,53 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 // Rate limiting for API routes
 app.use("/api", apiLimiter);
 
-// Auth routes
+// ─── Auth Routes ──────────────────────────────────────────────────────────────
+// Each sub-router is mounted independently under /api/auth and /auth.
+// POST /api/auth/register   →  register.routes.ts
+// POST /api/auth/login      →  login.routes.ts
+// POST /api/auth/logout     →  logout.routes.ts
+// POST /api/auth/refresh    →  refresh.routes.ts
 app.use("/api/auth", registerRoutes);
-app.use("/auth", registerRoutes);
+app.use("/api/auth", loginRoutes);
+app.use("/api/auth", logoutRoutes);
+app.use("/api/auth", refreshRoutes);
 
+// Mirror routes without /api prefix (useful during local dev / mobile clients)
+app.use("/auth", registerRoutes);
+app.use("/auth", loginRoutes);
+app.use("/auth", logoutRoutes);
+app.use("/auth", refreshRoutes);
+
+// ─── Protected Route: Current User Profile ────────────────────────────────────
+// GET /api/auth/me  →  returns the authenticated user's SafeUser profile
+app.get(
+  "/api/auth/me",
+  requireAuth,
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) {
+        throw new NotFoundError("User not found");
+      }
+
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user) {
+        throw new NotFoundError("User not found");
+      }
+
+      const response: ApiResponse<{ user: SafeUser }> = {
+        success: true,
+        data: { user: toSafeUser(user) },
+      };
+
+      res.status(200).json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ─── Infrastructure Routes ────────────────────────────────────────────────────
 // Liveness / Readiness health check endpoint
 app.get("/api/health", async (_req, res) => {
   const dbHealth = await checkDatabaseHealth();
@@ -68,11 +121,17 @@ app.get("/", (_req, res) => {
       version: "1.0.0",
       endpoints: {
         health: "/api/health",
+        register: "/api/auth/register",
+        login: "/api/auth/login",
+        logout: "/api/auth/logout",
+        refresh: "/api/auth/refresh",
+        me: "/api/auth/me",
       },
     },
   });
 });
 
+// ─── Error Handling ───────────────────────────────────────────────────────────
 // Handle 404 routes
 app.use(notFoundHandler);
 
@@ -80,3 +139,4 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 export default app;
+

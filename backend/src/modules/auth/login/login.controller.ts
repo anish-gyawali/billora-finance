@@ -82,23 +82,14 @@ export class LoginController {
 
       res.status(200).json(response);
     } catch (error) {
-      // 7. KNOWN ERROR HANDLING
       if (error instanceof AppError) {
         logger.warn(
           { requestId, errorCode: error.code, message: error.message },
           "Login failed"
         );
-
-        res.status(error.statusCode).json({
-          success: false,
-          error: { code: error.code, message: error.message },
-          meta: { requestId },
-        });
-        return;
+      } else {
+        logger.error({ requestId, err: error }, "Unexpected error during login");
       }
-
-      // 8. UNKNOWN ERROR -> Global Handler (logs stack trace)
-      logger.error({ requestId, err: error }, "Unexpected error during login");
       next(error);
     }
   };

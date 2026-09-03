@@ -55,8 +55,6 @@ export const registerSchema = z
       .email("Please provide a valid email address")
       .max(255, "Email must not exceed 255 characters"),
 
-    // --- Role (optional in payload, assigned authoritatively by backend) ---
-    role: z.enum(["founder", "accountant", "member"]).optional().default("member"),
 
     // --- Password (NIST 800-63B) ---
     password: z

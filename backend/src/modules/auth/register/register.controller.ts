@@ -87,24 +87,14 @@ export class RegisterController {
 
       res.status(201).json(response);
     } catch (error) {
-      // 8. KNOWN ERROR HANDLING (Don't leak to global 500 handler unnecessarily)
       if (error instanceof AppError) {
-        // Log specific business errors (Conflict, Validation) as Warn, not Error
         logger.warn(
           { requestId, errorCode: error.code, message: error.message },
           "Registration failed"
         );
-
-        res.status(error.statusCode).json({
-          success: false,
-          error: { code: error.code, message: error.message },
-          meta: { requestId },
-        });
-        return;
+      } else {
+        logger.error({ requestId, err: error }, "Unexpected error during registration");
       }
-
-      // 9. UNKNOWN ERROR -> Global Handler (logs stack trace)
-      logger.error({ requestId, err: error }, "Unexpected error during registration");
       next(error);
     }
   };
