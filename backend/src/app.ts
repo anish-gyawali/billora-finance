@@ -21,6 +21,8 @@ import { logoutRoutes } from "./modules/auth/logout/logout.routes.js";
 import { refreshRoutes } from "./modules/auth/token/refresh.routes.js";
 import { accountRoutes } from "./modules/accounts/account.routes.js";
 import { periodRoutes } from "./modules/periods/period.routes.js";
+import { journalEntryRoutes } from "./modules/journals/journal-entry.routes.js";
+import { journalLineRoutes } from "./modules/journal-line/journal-line.routes.js";
 
 export const app: Express = express();
 
@@ -77,6 +79,8 @@ app.use("/accounts", accountRoutes);
 
 // Accounting Periods (/api/periods & /periods)
 app.use("/api/periods", periodRoutes);
+app.use("/api/journal-entries", journalEntryRoutes);
+app.use("/api/journal-lines", journalLineRoutes);
 app.use("/periods", periodRoutes);
 
 // ─── Protected Route: Current User Profile ────────────────────────────────────

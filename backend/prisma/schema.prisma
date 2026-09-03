@@ -26,6 +26,7 @@ model User {
   is_active           Boolean  @default(true)
   mfa_secret          String?
   refreshTokens RefreshToken[]
+  journal_entries JournalEntry[] @relation("JournalEntryCreator")
 }
 
 model RefreshToken {
@@ -86,8 +87,8 @@ model AccountingPeriod {
   id           String       @id @default(uuid())
   created_at   DateTime     @default(now())
   updated_at   DateTime     @default(now())
-  period_start DateTime
-  period_end   DateTime
+  period_start DateTime @db.Date
+  period_end   DateTime @db.Date
   status       PeriodStatus  @default(open)
 
   journal_entries JournalEntry[]
@@ -103,20 +104,25 @@ enum PeriodStatus {
 model JournalEntry {
   id                String      @id @default(uuid())
   created_at        DateTime    @default(now())
-  updated_at        DateTime    @default(now())
-  entry_date        DateTime
+  updated_at        DateTime    @updatedAt
+  entry_date        DateTime    @db.Date
   period_id         String
-  status            EntryStatus
+  status            EntryStatus @default(draft)
   source_type       SourceType
-  source_id         String?
+  source_id         String?     @db.Uuid
   reversed_entry_id String?
   memo              String?
   created_by        String
 
+  accounting_period AccountingPeriod @relation(fields: [period_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  creator           User             @relation("JournalEntryCreator", fields: [created_by], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  reversed_entry    JournalEntry?    @relation("JournalEntryReversal", fields: [reversed_entry_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  reversal_entries  JournalEntry[]   @relation("JournalEntryReversal")
   lines             JournalLine[]
-  period            AccountingPeriod @relation(fields: [period_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([period_id])
+  @@index([created_by])
+  @@index([reversed_entry_id])
 }
 
 enum EntryStatus {
