@@ -1,6 +1,7 @@
 import rateLimit from "express-rate-limit";
 import type { Request, Response } from "express";
 import type { ApiErrorResponse } from "../types/index.js";
+import { env } from "../../config/env.js";
 
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -23,7 +24,7 @@ export const apiLimiter = rateLimit({
 
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20, // Strict limit for authentication endpoints (login, password reset)
+  max: env.NODE_ENV === "test" ? 1000 : 20, // Higher limit in test environment
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req: Request, res: Response) => {

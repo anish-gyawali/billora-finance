@@ -25,9 +25,9 @@ const isValidToken = (token: unknown): token is string => {
 };
 
 const cookieOptions = {
-  httpOnly: false,
+  httpOnly: true,
   secure: env.NODE_ENV === "production",
-  sameSite: "lax" as const,
+  sameSite: "strict" as const,
   ...(env.COOKIE_DOMAIN ? { domain: env.COOKIE_DOMAIN } : {}),
   path: "/",
   maxAge: 24 * 60 * 60 * 1000,

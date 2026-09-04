@@ -4,13 +4,15 @@ import { PrismaClient } from "../generated/prisma/client.js";
 import { env } from "../config/env.js";
 import { logger } from "../config/logger.js";
 
+const isTest = env.NODE_ENV === "test";
+
 const pool = new pg.Pool({
   connectionString: env.DATABASE_URL,
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
   ssl: {
-    rejectUnauthorized: env.DATABASE_SSL_REJECT_UNAUTHORIZED,
+    rejectUnauthorized: isTest ? false : env.DATABASE_SSL_REJECT_UNAUTHORIZED,
   },
 });
 

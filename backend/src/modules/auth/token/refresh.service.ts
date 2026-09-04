@@ -10,6 +10,9 @@ import {
 } from "../../../common/auth/jwt.utils.js";
 import { RefreshTokenRepository, refreshTokenRepository } from "./refreshToken.repository.js";
 import { toSafeUser, type SafeUser } from "../../../common/mappers/user.mapper.js";
+import type { Prisma } from "../../../generated/prisma/client.js";
+
+type TxClient = Prisma.TransactionClient;
 
 export interface RefreshTokenContext {
   ipAddress?: string | undefined;
@@ -34,6 +37,7 @@ export class RefreshTokenService {
    * 4. Revokes current token.
    * 5. Issues new access token and newly rotated refresh token.
    * 6. Persists new token hash in database.
+   * All DB writes (revoke + create) run atomically in a transaction.
    */
   async refresh(
     rawToken: string | undefined,
@@ -92,29 +96,31 @@ export class RefreshTokenService {
       throw new ForbiddenError("Account is inactive or pending verification");
     }
 
-    // 6. Token Rotation: Invalidate used token
-    await this.refreshTokenRepo.revoke(tokenHash);
-
-    // 7. Generate new token pair
-    const accessToken = signAccessToken({
-      userId: user.id,
-      role: user.role,
-      email: user.email,
-    });
-
+    // 6-8. Atomic Token Rotation: revoke old + create new in single transaction
     const {
       token: newRefreshToken,
       tokenHash: newTokenHash,
       expiresAt: newExpiresAt,
     } = signRefreshToken(user.id);
 
-    // 8. Persist new refresh token in DB
-    await this.refreshTokenRepo.create({
+    await prisma.$transaction(async (tx) => {
+      await this.refreshTokenRepo.revoke(tokenHash, tx);
+      await this.refreshTokenRepo.create(
+        {
+          userId: user.id,
+          tokenHash: newTokenHash,
+          expiresAt: newExpiresAt,
+          ipAddress: context?.ipAddress || null,
+          userAgent: context?.userAgent || null,
+        },
+        tx
+      );
+    });
+
+    const accessToken = signAccessToken({
       userId: user.id,
-      tokenHash: newTokenHash,
-      expiresAt: newExpiresAt,
-      ipAddress: context?.ipAddress || null,
-      userAgent: context?.userAgent || null,
+      role: user.role,
+      email: user.email,
     });
 
     logger.info(

@@ -1,5 +1,7 @@
 import { prisma } from "../../../lib/prisma.js";
-import type { RefreshToken, Prisma } from "../../../generated/prisma/client.js";
+import type { RefreshToken, Prisma, PrismaClient } from "../../../generated/prisma/client.js";
+
+type TxClient = Prisma.TransactionClient;
 
 export interface CreateRefreshTokenData {
   userId: string;
@@ -10,10 +12,14 @@ export interface CreateRefreshTokenData {
 }
 
 export class RefreshTokenRepository {
+  private getClient(tx?: TxClient) {
+    return (tx ?? prisma) as PrismaClient;
+  }
+
   /**
    * Persists a newly signed refresh token hash into the database.
    */
-  async create(data: CreateRefreshTokenData): Promise<RefreshToken> {
+  async create(data: CreateRefreshTokenData, tx?: TxClient): Promise<RefreshToken> {
     const createData: Prisma.RefreshTokenCreateInput = {
       tokenHash: data.tokenHash,
       expiresAt: data.expiresAt,
@@ -24,7 +30,7 @@ export class RefreshTokenRepository {
       },
     };
 
-    return prisma.refreshToken.create({
+    return this.getClient(tx).refreshToken.create({
       data: createData,
     });
   }
@@ -32,8 +38,8 @@ export class RefreshTokenRepository {
   /**
    * Finds an active (non-revoked, unexpired) refresh token record by its SHA-256 hash.
    */
-  async findByTokenHash(tokenHash: string): Promise<RefreshToken | null> {
-    return prisma.refreshToken.findUnique({
+  async findByTokenHash(tokenHash: string, tx?: TxClient): Promise<RefreshToken | null> {
+    return this.getClient(tx).refreshToken.findUnique({
       where: { tokenHash },
     });
   }
@@ -41,8 +47,8 @@ export class RefreshTokenRepository {
   /**
    * Revokes a specific refresh token by timestamping its revokedAt field.
    */
-  async revoke(tokenHash: string): Promise<RefreshToken> {
-    return prisma.refreshToken.update({
+  async revoke(tokenHash: string, tx?: TxClient): Promise<RefreshToken> {
+    return this.getClient(tx).refreshToken.update({
       where: { tokenHash },
       data: { revokedAt: new Date() },
     });
@@ -51,8 +57,8 @@ export class RefreshTokenRepository {
   /**
    * Revokes all active refresh tokens for a specific user (e.g. on logout all devices or password reset).
    */
-  async revokeAllForUser(userId: string): Promise<Prisma.BatchPayload> {
-    return prisma.refreshToken.updateMany({
+  async revokeAllForUser(userId: string, tx?: TxClient): Promise<Prisma.BatchPayload> {
+    return this.getClient(tx).refreshToken.updateMany({
       where: {
         userId,
         revokedAt: null,

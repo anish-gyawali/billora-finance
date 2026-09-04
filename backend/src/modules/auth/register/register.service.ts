@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { Prisma } from "../../../generated/prisma/client.js";
 import { env } from "../../../config/env.js";
-import { EmailAlreadyExistsError, WeakPasswordError } from "../../../common/errors/errors.js";
+import { EmailAlreadyExistsError, WeakPasswordError } from "../../../common/errors/AppError.js";
 import { passwordPolicy } from "../../../common/security/passwordPolicy.js";
 import { RegisterRepository, registerRepository } from "./register.repository.js";
 import { RefreshTokenRepository, refreshTokenRepository } from "../token/refreshToken.repository.js";
