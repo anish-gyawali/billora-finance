@@ -29,6 +29,8 @@ model User {
   journal_entries JournalEntry[] @relation("JournalEntryCreator")
   paid_expenses Expense[] @relation("ExpensePaidByUser")
   approved_expenses Expense[] @relation("ExpenseApprovedBy")
+  salary_items SalaryItem[]
+  approved_salary_runs SalaryRun[]
 }
 
 model RefreshToken {
@@ -125,6 +127,7 @@ model JournalEntry {
   reversal_entries  JournalEntry[]   @relation("JournalEntryReversal")
   lines             JournalLine[]
   expenses          Expense[]
+  salary_runs       SalaryRun[]
 
   @@index([period_id])
   @@index([created_by])
@@ -337,7 +340,12 @@ model SalaryRun {
   status           SalaryStatus
   journal_entry_id String?
   approved_by      String?
+  journal_entry    JournalEntry? @relation(fields: [journal_entry_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  approver         User?         @relation(fields: [approved_by], references: [id], onDelete: Restrict, onUpdate: Cascade)
   items            SalaryItem[]
+
+  @@unique([journal_entry_id])
+  @@index([period_start, period_end])
 }
 
 model SalaryItem {
@@ -347,10 +355,14 @@ model SalaryItem {
   salary_run_id String
   salary_run    SalaryRun @relation(fields: [salary_run_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
   user_id       String
+  user          User     @relation(fields: [user_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
   gross_amount  Decimal  @db.Decimal(14, 2)
   tds_amount    Decimal  @db.Decimal(14, 2)
   net_amount    Decimal  @db.Decimal(14, 2)
   paid          Boolean  @default(false)
+
+  @@unique([salary_run_id, user_id])
+  @@index([user_id])
 }
 
 enum SalaryStatus {

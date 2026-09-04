@@ -1,0 +1,13 @@
+import { z } from "zod";
+import { SalaryStatus } from "../../generated/prisma/enums.js";
+const uuid = z.string().uuid();
+const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must use YYYY-MM-DD format").refine((value) => new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) === value, "Invalid calendar date");
+export const createSalaryRunSchema = z.object({ period_start: dateOnly, period_end: dateOnly, user_ids: z.array(uuid).min(1).max(500) }).strict().superRefine((data, ctx) => { if (data.period_end < data.period_start) ctx.addIssue({ code: "custom", path: ["period_end"], message: "Period end cannot be before period start" }); if (new Set(data.user_ids).size !== data.user_ids.length) ctx.addIssue({ code: "custom", path: ["user_ids"], message: "Duplicate employees are not allowed" }); });
+export const updateSalaryRunSchema = z.object({ period_start: dateOnly.optional(), period_end: dateOnly.optional(), user_ids: z.array(uuid).min(1).max(500).optional() }).strict().refine((value) => Object.keys(value).length > 0, { message: "At least one field must be provided for update" }).superRefine((data, ctx) => { if (data.period_start && data.period_end && data.period_end < data.period_start) ctx.addIssue({ code: "custom", path: ["period_end"], message: "Period end cannot be before period start" }); if (data.user_ids && new Set(data.user_ids).size !== data.user_ids.length) ctx.addIssue({ code: "custom", path: ["user_ids"], message: "Duplicate employees are not allowed" }); });
+export const salaryRunIdParamSchema = z.object({ id: uuid }).strict();
+export const salaryRunItemsParamSchema = z.object({ salaryRunId: uuid }).strict();
+export const salaryItemParamSchema = z.object({ salaryRunId: uuid, itemId: uuid }).strict();
+export const querySalaryRunsSchema = z.object({ status: z.nativeEnum(SalaryStatus).optional(), period_start_from: dateOnly.optional(), period_start_to: dateOnly.optional(), period_end_from: dateOnly.optional(), period_end_to: dateOnly.optional(), sortBy: z.enum(["period_start", "period_end", "created_at", "status"]).default("period_start"), sortOrder: z.enum(["asc", "desc"]).default("desc"), page: z.coerce.number().int().min(1).default(1), limit: z.coerce.number().int().min(1).max(100).default(50) }).strict();
+export type CreateSalaryRunInput = z.infer<typeof createSalaryRunSchema>;
+export type UpdateSalaryRunInput = z.infer<typeof updateSalaryRunSchema>;
+export type QuerySalaryRunsInput = z.infer<typeof querySalaryRunsSchema>;
