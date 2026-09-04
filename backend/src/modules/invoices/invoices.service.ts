@@ -47,7 +47,7 @@ export class InvoicesService {
   async send(id: string, actorId: string): Promise<InvoiceDetails> {
     const current = await this.get(id);
     if (current.status !== "draft") throw new ConflictError("Only draft invoices can be sent");
-    const invoice = await this.repository.send(id);
+    const invoice = await this.repository.send(id, actorId);
     await this.audit(actorId, "INVOICE_SENT", id, { status: current.status }, { status: invoice.status });
     return invoice;
   }

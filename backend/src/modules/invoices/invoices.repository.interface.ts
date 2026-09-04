@@ -12,7 +12,7 @@ export interface IInvoicesRepository {
   findById(id: string): Promise<InvoiceDetails | null>;
   findAll(input: QueryInvoicesInput): Promise<{ invoices: InvoiceDetails[]; total: number }>;
   updateDraft(id: string, input: UpdateInvoiceInput, total: Prisma.Decimal): Promise<InvoiceDetails>;
-  send(id: string): Promise<InvoiceDetails>;
+  send(id: string, actorId: string): Promise<InvoiceDetails>;
   void(id: string): Promise<InvoiceDetails>;
   recordPayment(id: string, input: CreatePaymentInput): Promise<{ invoice: InvoiceDetails; payment: Payment; paidAmount: Prisma.Decimal; status: Invoice["status"] }>;
   findAging(): Promise<InvoiceDetails[]>;

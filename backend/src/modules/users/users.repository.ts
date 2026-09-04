@@ -1,0 +1,18 @@
+import bcrypt from "bcryptjs";
+import { Prisma } from "../../generated/prisma/client.js";
+import { prisma } from "../../lib/prisma.js";
+import { ConflictError, InternalServerError, NotFoundError } from "../../common/errors/AppError.js";
+import { logger } from "../../config/logger.js";
+import { env } from "../../config/env.js";
+import type { CreateUserInput, UpdateUserInput, UsersQuery } from "./users.validation.js";
+const select = { id: true, created_at: true, updated_at: true, email: true, name: true, role: true, pan_number: true, monthly_salary: true, is_active: true } as const;
+export type UserRecord = Prisma.UserGetPayload<{ select: typeof select }>;
+export class UsersRepository {
+  async list(q: UsersQuery) { try { const where: Prisma.UserWhereInput = { ...(q.role ? { role: q.role } : {}), ...(q.is_active === undefined ? {} : { is_active: q.is_active }), ...(q.search ? { OR: [{ name: { contains: q.search, mode: "insensitive" } }, { email: { contains: q.search, mode: "insensitive" } }] } : {}) }; const [items, total] = await prisma.$transaction([prisma.user.findMany({ where, select, orderBy: { name: "asc" }, skip: (q.page - 1) * q.limit, take: q.limit }), prisma.user.count({ where })]); return { items, total }; } catch (e) { logger.error({ err: e }, "Failed to list users"); throw new InternalServerError("Failed to list users"); } }
+  async find(id: string) { try { return await prisma.user.findUnique({ where: { id }, select }); } catch (e) { logger.error({ err: e, userId: id }, "Failed to fetch user"); throw new InternalServerError("Failed to fetch user"); } }
+  async countFounders() { return prisma.user.count({ where: { role: "founder", is_active: true } }); }
+  async create(input: CreateUserInput): Promise<UserRecord> { try { const hash = await bcrypt.hash(input.password, env.BCRYPT_SALT_ROUNDS); return await prisma.user.create({ data: { name: input.name, email: input.email, password_hash: hash, role: input.role, bank_account_number: "", pan_number: input.pan_number ?? null, monthly_salary: input.monthly_salary ?? null }, select }); } catch (e) { if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") throw new ConflictError("Email address is already registered"); logger.error({ err: e }, "Failed to create user"); throw new InternalServerError("Failed to create user"); } }
+  async update(id: string, input: UpdateUserInput): Promise<UserRecord> { try { const data: Prisma.UserUpdateInput = { updated_at: new Date(), ...(input.name !== undefined ? { name: input.name } : {}), ...(input.role !== undefined ? { role: input.role } : {}), ...(input.is_active !== undefined ? { is_active: input.is_active } : {}), ...(input.pan_number !== undefined ? { pan_number: input.pan_number } : {}), ...(input.monthly_salary !== undefined ? { monthly_salary: input.monthly_salary } : {}) }; return await prisma.user.update({ where: { id }, data, select }); } catch (e) { if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") throw new NotFoundError("User was not found"); logger.error({ err: e, userId: id }, "Failed to update user"); throw new InternalServerError("Failed to update user"); } }
+  async audit(userId: string, action: string, id: string, oldValue?: Record<string, unknown>, newValue?: Record<string, unknown>) { try { await prisma.auditLog.create({ data: { user_id: userId, action, entity_type: "User", entity_id: id, ...(oldValue ? { old_value: oldValue as Prisma.InputJsonValue } : {}), ...(newValue ? { new_value: newValue as Prisma.InputJsonValue } : {}) } }); } catch (e) { logger.error({ err: e, userId: id }, "Failed to write user audit log"); } }
+}
+export const usersRepository = new UsersRepository();

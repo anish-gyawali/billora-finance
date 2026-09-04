@@ -1,6 +1,7 @@
 import { Prisma, type Invoice, type InvoiceItem, type Payment } from "../../generated/prisma/client.js";
 import { prisma } from "../../lib/prisma.js";
 import { logger } from "../../config/logger.js";
+import { postJournalEntry } from "../../lib/accounting/postJournalEntry.js";
 import { ConflictError, InternalServerError, NotFoundError } from "../../common/errors/AppError.js";
 import type { CreateInvoiceInput, CreatePaymentInput, QueryInvoicesInput, UpdateInvoiceInput } from "./invoices.validation.js";
 import type { IInvoicesRepository, InvoiceDetails } from "./invoices.repository.interface.js";
@@ -58,7 +59,7 @@ export class InvoicesRepository implements IInvoicesRepository {
         prisma.invoice.findMany({ where, include: { client: { select: clientSelect }, items: true }, orderBy: [{ invoice_date: "desc" }, { created_at: "desc" }], skip: (input.page - 1) * input.limit, take: input.limit }),
         prisma.invoice.count({ where }),
       ]);
-      return { invoices: rows.map((row) => ({ ...row, payments: [] })), total };
+      return { invoices: await Promise.all(rows.map((row) => withPayments(prisma, row))), total };
     } catch (error) { logger.error({ err: error, input }, "Failed to list invoices"); throw new InternalServerError("Failed to list invoices"); }
   }
 
@@ -75,7 +76,28 @@ export class InvoicesRepository implements IInvoicesRepository {
     } catch (error) { if (error instanceof ConflictError || error instanceof NotFoundError) throw error; logger.error({ err: error, invoiceId: id }, "Failed to update invoice"); throw new InternalServerError("Failed to update invoice"); }
   }
 
-  async send(id: string): Promise<InvoiceDetails> { return this.transition(id, "sent", "Only draft invoices can be sent"); }
+  async send(id: string, actorId: string): Promise<InvoiceDetails> {
+    try { return await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Invoice" WHERE id = ${id} FOR UPDATE`;
+      const invoice = await tx.invoice.findUnique({ where: { id }, include: { client: { select: clientSelect }, items: true } });
+      if (!invoice) throw new NotFoundError(`Invoice with ID '${id}' not found`);
+      if (invoice.status !== "draft") throw new ConflictError("Only draft invoices can be sent");
+      const period = await tx.accountingPeriod.findFirst({ where: { status: "open", period_start: { lte: invoice.invoice_date }, period_end: { gte: invoice.invoice_date } } });
+      if (!period) throw new ConflictError("No open accounting period covers the invoice date");
+      const ar = await findAccountByCode(tx, invoice.currency === "NPR" ? "1200" : "1210");
+      const revenue = await findAccountByCode(tx, invoice.currency === "NPR" ? "4010" : "4020");
+      if (!ar || !revenue) throw new ConflictError("Invoice posting requires the configured receivable and revenue accounts");
+      const rate = invoice.currency === "NPR" ? new Prisma.Decimal(1) : invoice.exchange_rate_to_npr ?? new Prisma.Decimal(0);
+      if (rate.lte(0)) throw new ConflictError("A valid NPR exchange rate is required before issuing a foreign-currency invoice");
+      const base = invoice.items.reduce((s, item) => s.plus(decimal(item.amount)), new Prisma.Decimal(0));
+      const vat = invoice.items.reduce((s, item) => s.plus(decimal(item.vat_amount ?? 0)), new Prisma.Decimal(0));
+      const lines = [{ account_id: ar.id, debit: decimal(invoice.total_amount).mul(rate), description: "Accounts receivable" }, { account_id: revenue.id, credit: base.mul(rate), description: "Invoice revenue" }];
+      if (vat.gt(0)) { const vatAccount = await findAccountByCode(tx, "2110"); if (!vatAccount) throw new ConflictError("VAT payable account is required before posting VAT invoices"); lines.push({ account_id: vatAccount.id, credit: vat.mul(rate), description: "Output VAT" }); }
+      const journal = await postJournalEntry(tx, { entry_date: invoice.invoice_date, period_id: period.id, source_type: "invoice", source_id: invoice.id, created_by: actorId, memo: `Invoice posting ${invoice.invoice_number}`, lines });
+      const updated = await tx.invoice.update({ where: { id }, data: { status: "sent", journal_entry_id: journal.id }, include: { client: { select: clientSelect }, items: true } });
+      return withPayments(tx, updated);
+    }); } catch (error) { if (error instanceof ConflictError || error instanceof NotFoundError) throw error; logger.error({ err: error, invoiceId: id }, "Failed to issue invoice"); throw new InternalServerError("Failed to issue invoice"); }
+  }
 
   async void(id: string): Promise<InvoiceDetails> { return this.transition(id, "void", "Only unpaid invoices can be voided", true); }
 
@@ -98,7 +120,7 @@ export class InvoicesRepository implements IInvoicesRepository {
   }
 
   async findAging(): Promise<InvoiceDetails[]> {
-    try { const rows = await prisma.invoice.findMany({ where: { status: { notIn: ["paid", "void"] } }, include: { client: { select: clientSelect }, items: true }, orderBy: { due_date: "asc" } }); return rows.map((row) => ({ ...row, payments: [] })); }
+    try { const rows = await prisma.invoice.findMany({ where: { status: { notIn: ["paid", "void"] } }, include: { client: { select: clientSelect }, items: true }, orderBy: { due_date: "asc" } }); return Promise.all(rows.map((row) => withPayments(prisma, row))); }
     catch (error) { logger.error({ err: error }, "Failed to fetch accounts receivable aging"); throw new InternalServerError("Failed to fetch accounts receivable aging"); }
   }
 
@@ -137,5 +159,6 @@ export class InvoicesRepository implements IInvoicesRepository {
 const decimal = (value: number | Prisma.Decimal) => new Prisma.Decimal(String(value));
 const toDate = (value: string) => new Date(`${value}T00:00:00.000Z`);
 const withPayments = async (client: { payment: { findMany(args: { where: { allocated_to_type: string; allocated_to_id: string }; orderBy: { payment_date: "asc" } }): Promise<Payment[]> } }, invoice: Invoice & { client: InvoiceDetails["client"]; items: InvoiceItem[] }): Promise<InvoiceDetails> => ({ ...invoice, payments: await client.payment.findMany({ where: { allocated_to_type: "invoice", allocated_to_id: invoice.id }, orderBy: { payment_date: "asc" } }) });
+const findAccountByCode = async (tx: Prisma.TransactionClient, code: string) => tx.account.findFirst({ where: { code, is_active: true }, select: { id: true } });
 
 export const invoicesRepository = new InvoicesRepository();

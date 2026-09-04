@@ -34,6 +34,8 @@ import { bankAccountsRoutes } from "./bankaccounts/bankaccounts.routes.js";
 import { taxesRoutes } from "./modules/taxes/taxes.routes.js";
 import { auditRoutes } from "./modules/audit/audit.routes.js";
 import { reportsRoutes } from "./modules/reports/reports.routes.js";
+import { usersRoutes } from "./modules/users/users.routes.js";
+import { documentsRoutes } from "./modules/documents/documents.routes.js";
 
 export const app: Express = express();
 
@@ -114,6 +116,10 @@ app.use("/api/audit-log", auditRoutes);
 app.use("/audit-log", auditRoutes);
 app.use("/api/reports", reportsRoutes);
 app.use("/reports", reportsRoutes);
+app.use("/api/users", usersRoutes);
+app.use("/users", usersRoutes);
+app.use("/api/documents", documentsRoutes);
+app.use("/documents", documentsRoutes);
 
 // ─── Protected Route: Current User Profile ────────────────────────────────────
 // GET /api/auth/me  →  returns the authenticated user's SafeUser profile

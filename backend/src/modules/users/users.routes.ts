@@ -1,0 +1,9 @@
+import { Router } from "express";
+import { requireAuth, requireRole } from "../../common/middleware/auth.js";
+import { validate } from "../../common/middleware/validate.js";
+import { UserRole } from "../../generated/prisma/enums.js";
+import { usersController } from "./users.controller.js";
+import { createUserSchema, updateUserSchema, userIdSchema, usersQuerySchema } from "./users.validation.js";
+const router: Router = Router(); const founder = requireRole(UserRole.founder);
+router.get("/", requireAuth, founder, validate({ query: usersQuerySchema }), usersController.list); router.post("/", requireAuth, founder, validate(createUserSchema), usersController.create); router.get("/:id", requireAuth, founder, validate({ params: userIdSchema }), usersController.get); router.patch("/:id", requireAuth, founder, validate({ params: userIdSchema, body: updateUserSchema }), usersController.update);
+export default router; export { router as usersRoutes };

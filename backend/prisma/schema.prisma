@@ -417,6 +417,8 @@ model Document {
   storage_key String
   mime_type   String
   uploaded_by String
+  @@index([owner_type, owner_id])
+  @@index([uploaded_by])
 }
 
 model AuditLog {

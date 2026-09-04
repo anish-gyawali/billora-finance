@@ -2,7 +2,7 @@ import { Prisma } from "../../generated/prisma/client.js";
 
 export interface JournalPostingLine { account_id: string; debit?: Prisma.Decimal; credit?: Prisma.Decimal; description?: string | null; }
 
-export async function postJournalEntry(tx: Prisma.TransactionClient, input: { entry_date: Date; period_id: string; source_type: "expense" | "salary_run"; source_id: string; created_by: string; lines: JournalPostingLine[]; memo?: string | null }) {
+export async function postJournalEntry(tx: Prisma.TransactionClient, input: { entry_date: Date; period_id: string; source_type: "expense" | "invoice" | "payment" | "salary_run" | "manual" | "reversal"; source_id: string; created_by: string; lines: JournalPostingLine[]; memo?: string | null }) {
   let debit = new Prisma.Decimal(0); let credit = new Prisma.Decimal(0);
   for (const line of input.lines) { debit = debit.plus(line.debit ?? 0); credit = credit.plus(line.credit ?? 0); }
   if (input.lines.length < 2 || debit.isZero() || !debit.eq(credit)) throw new Error("Journal entry is not balanced");
