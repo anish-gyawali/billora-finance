@@ -7,7 +7,7 @@ const amount = z.coerce.number().finite().positive().max(99999999999999.99);
 const actualNpr = z.coerce.number().finite().nonnegative().max(99999999999999.99);
 const allocationType = z.enum(["invoice", "vendor_expense", "salary_run", "direct"]);
 
-export const createPaymentSchema = z.object({
+const paymentFields = z.object({
   direction: z.nativeEnum(PaymentDirection),
   amount,
   currency: z.enum(["NPR", "USD"]),
@@ -18,12 +18,24 @@ export const createPaymentSchema = z.object({
   allocated_to_id: uuid.nullable().optional(),
   journal_entry_id: uuid.nullable().optional(),
   actual_npr_amount: actualNpr.nullable().optional(),
-}).strict().superRefine((data, ctx) => {
+}).strict();
+
+export const createPaymentSchema = paymentFields.superRefine((data, ctx) => {
   if (data.allocated_to_type === "direct" && data.allocated_to_id) ctx.addIssue({ code: "custom", path: ["allocated_to_id"], message: "Direct payments must not have an allocation ID" });
   if (data.allocated_to_type !== "direct" && !data.allocated_to_id) ctx.addIssue({ code: "custom", path: ["allocated_to_id"], message: "An allocation ID is required" });
 });
 
-export const updatePaymentSchema = createPaymentSchema.omit({ journal_entry_id: true }).partial().strict().refine((value) => Object.keys(value).length > 0, { message: "At least one field must be provided for update" });
+export const updatePaymentSchema = z.object({
+  direction: z.nativeEnum(PaymentDirection).optional(),
+  amount: amount.optional(),
+  currency: z.enum(["NPR", "USD"]).optional(),
+  payment_date: dateOnly.optional(),
+  account_id: uuid.optional(),
+  method: z.nativeEnum(PaymentMethod).optional(),
+  allocated_to_type: allocationType.optional(),
+  allocated_to_id: uuid.nullable().optional(),
+  actual_npr_amount: actualNpr.nullable().optional(),
+}).strict().refine((value) => Object.keys(value).length > 0, { message: "At least one field must be provided for update" });
 export const paymentIdParamSchema = z.object({ id: uuid }).strict();
 export const queryPaymentsSchema = z.object({
   direction: z.nativeEnum(PaymentDirection).optional(),
