@@ -73,6 +73,7 @@ model Account {
   expense_items  ExpenseItem[]
   paid_expenses  Expense[]
   payments       Payment[]
+  bank_account   BankAccount?
 
   @@index([parent_id])
 }
@@ -423,4 +424,10 @@ model BankAccount {
   account_number String
   currency       String
   gl_account_id  String   @unique
+  glAccount      Account  @relation(fields: [gl_account_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  is_active      Boolean  @default(true)
+  deleted_at     DateTime?
+
+  @@index([currency])
+  @@index([is_active])
 }
