@@ -30,7 +30,7 @@ import { expensesRoutes } from "./modules/expenses/expenses.routes.js";
 import { paymentsRoutes } from "./modules/payments/payments.routes.js";
 import { salaryRunRoutes } from "./modules/salaries/salary-run.routes.js";
 import { salaryItemRoutes } from "./modules/salaries/salary-item.routes.js";
-import { bankAccountsRoutes } from "./bankaccounts/bankaccounts.routes.js";
+import { bankAccountsRoutes } from "./modules/bankaccounts/bankaccounts.routes.js";
 import { taxesRoutes } from "./modules/taxes/taxes.routes.js";
 import { auditRoutes } from "./modules/audit/audit.routes.js";
 import { reportsRoutes } from "./modules/reports/reports.routes.js";

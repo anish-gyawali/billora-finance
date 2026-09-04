@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { requireAuth, requireRole } from "../common/middleware/auth.js";
-import { validate } from "../common/middleware/validate.js";
-import { UserRole } from "../generated/prisma/enums.js";
+import { requireAuth, requireRole } from "../../common/middleware/auth.js";
+import { validate } from "../../common/middleware/validate.js";
+import { UserRole } from "../../generated/prisma/enums.js";
 import { bankAccountsController } from "./bankaccounts.controller.js";
 import { bankAccountIdParamSchema, bankAccountQuerySchema, createBankAccountSchema, updateBankAccountSchema } from "./bankaccounts.validation.js";
 

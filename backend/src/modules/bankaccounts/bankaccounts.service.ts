@@ -1,4 +1,4 @@
-import { BadRequestError, ConflictError, NotFoundError } from "../common/errors/AppError.js";
+import { BadRequestError, ConflictError, NotFoundError } from "../../common/errors/AppError.js";
 import { bankAccountsRepository, type BankAccountRecord } from "./bankaccounts.repository.js";
 import type { BankAccountQuery, CreateBankAccountInput, UpdateBankAccountInput } from "./bankaccounts.validation.js";
 

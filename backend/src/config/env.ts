@@ -21,6 +21,9 @@ const envSchema = z.object({
     }),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
   BCRYPT_SALT_ROUNDS: z.coerce.number().default(12),
+  CLOUDINARY_CLOUD_NAME: z.string().min(1, "CLOUDINARY_CLOUD_NAME is required"),
+  CLOUDINARY_API_KEY: z.string().min(1, "CLOUDINARY_API_KEY is required"),
+  CLOUDINARY_API_SECRET: z.string().min(1, "CLOUDINARY_API_SECRET is required"),
 });
 
 const parseEnv = () => {

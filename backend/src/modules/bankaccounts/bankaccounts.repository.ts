@@ -1,7 +1,7 @@
-import { Prisma } from "../generated/prisma/client.js";
-import { prisma } from "../lib/prisma.js";
-import { ConflictError, InternalServerError, NotFoundError } from "../common/errors/AppError.js";
-import { logger } from "../config/logger.js";
+import { Prisma } from "../../generated/prisma/client.js";
+import { prisma } from "../../lib/prisma.js";
+import { ConflictError, InternalServerError, NotFoundError } from "../../common/errors/AppError.js";
+import { logger } from "../../config/logger.js";
 import type { BankAccountQuery, CreateBankAccountInput, UpdateBankAccountInput } from "./bankaccounts.validation.js";
 
 const glSelect = { id: true, code: true, name: true, type: true, normal_balance: true, is_active: true } as const;

@@ -26,7 +26,11 @@ export const validate = (schemaOrConfig: ZodType | RequestValidationSchema) => {
           req.body = await schemaOrConfig.body.parseAsync(req.body);
         }
         if (schemaOrConfig.query) {
-          req.query = (await schemaOrConfig.query.parseAsync(req.query)) as Request["query"];
+          Object.defineProperty(req, "query", {
+            value: await schemaOrConfig.query.parseAsync(req.query),
+            configurable: true,
+            enumerable: true,
+          });
         }
         if (schemaOrConfig.params) {
           req.params = (await schemaOrConfig.params.parseAsync(req.params)) as Request["params"];
