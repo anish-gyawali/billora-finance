@@ -24,6 +24,7 @@ import { periodRoutes } from "./modules/periods/period.routes.js";
 import { journalEntryRoutes } from "./modules/journals/journal-entry.routes.js";
 import { journalLineRoutes } from "./modules/journal-line/journal-line.routes.js";
 import { clientsRoutes } from "./modules/client/clients.routes.js";
+import { invoicesRoutes } from "./modules/invoices/invoices.routes.js";
 
 export const app: Express = express();
 
@@ -84,6 +85,8 @@ app.use("/api/clients", clientsRoutes);
 app.use("/api/client", clientsRoutes);
 app.use("/clients", clientsRoutes);
 app.use("/client", clientsRoutes);
+app.use("/api/invoices", invoicesRoutes);
+app.use("/invoices", invoicesRoutes);
 
 // ─── Protected Route: Current User Profile ────────────────────────────────────
 // GET /api/auth/me  →  returns the authenticated user's SafeUser profile

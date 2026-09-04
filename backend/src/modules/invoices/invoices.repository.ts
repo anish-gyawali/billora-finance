@@ -1,0 +1,141 @@
+import { Prisma, type Invoice, type InvoiceItem, type Payment } from "../../generated/prisma/client.js";
+import { prisma } from "../../lib/prisma.js";
+import { logger } from "../../config/logger.js";
+import { ConflictError, InternalServerError, NotFoundError } from "../../common/errors/AppError.js";
+import type { CreateInvoiceInput, CreatePaymentInput, QueryInvoicesInput, UpdateInvoiceInput } from "./invoices.validation.js";
+import type { IInvoicesRepository, InvoiceDetails } from "./invoices.repository.interface.js";
+
+const clientSelect = { id: true, name: true, country: true, billing_email: true, currency: true } as const;
+
+export class InvoicesRepository implements IInvoicesRepository {
+  async create(input: CreateInvoiceInput, total: Prisma.Decimal): Promise<InvoiceDetails> {
+    try {
+      return await prisma.$transaction(async (tx) => {
+        const client = await tx.client.findFirst({ where: { id: input.client_id, is_active: true }, select: { id: true } });
+        if (!client) throw new NotFoundError("Active client was not found");
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('billora_invoice_number'))`;
+        const year = input.invoice_date.slice(0, 4);
+        const prefix = `INV-${year}-`;
+        const last = await tx.invoice.findFirst({ where: { invoice_number: { startsWith: prefix } }, orderBy: { invoice_number: "desc" }, select: { invoice_number: true } });
+        const next = last ? Number(last.invoice_number.slice(prefix.length)) + 1 : 1;
+        const invoiceNumber = `${prefix}${String(next).padStart(3, "0")}`;
+        const invoice = await tx.invoice.create({
+          data: {
+            client_id: input.client_id,
+            invoice_number: invoiceNumber,
+            invoice_date: toDate(input.invoice_date),
+            due_date: toDate(input.due_date),
+            currency: input.currency,
+            exchange_rate_to_npr: input.exchange_rate_to_npr == null ? null : decimal(input.exchange_rate_to_npr),
+            status: "draft",
+            total_amount: total,
+            paid_amount: new Prisma.Decimal(0),
+            items: { create: input.invoice_items.map((item) => ({ description: item.description, quantity: item.quantity, rate: decimal(item.rate), amount: decimal(item.quantity).mul(decimal(item.rate)), vat_amount: item.vat_amount == null ? null : decimal(item.vat_amount) })) },
+          },
+          include: { client: { select: clientSelect }, items: true },
+        });
+        return withPayments(tx, invoice);
+      });
+    } catch (error) { return this.mapError(error, "Failed to create invoice"); }
+  }
+
+  async findById(id: string): Promise<InvoiceDetails | null> {
+    try {
+      const invoice = await prisma.invoice.findUnique({ where: { id }, include: { client: { select: clientSelect }, items: true } });
+      return invoice ? withPayments(prisma, invoice) : null;
+    } catch (error) { logger.error({ err: error, invoiceId: id }, "Failed to fetch invoice"); throw new InternalServerError("Failed to fetch invoice"); }
+  }
+
+  async findAll(input: QueryInvoicesInput): Promise<{ invoices: InvoiceDetails[]; total: number }> {
+    try {
+      const where: Prisma.InvoiceWhereInput = {
+        ...(input.client_id ? { client_id: input.client_id } : {}),
+        ...(input.status ? { status: input.status } : {}),
+        ...(input.currency ? { currency: input.currency } : {}),
+        ...(input.invoice_date_from || input.invoice_date_to ? { invoice_date: { ...(input.invoice_date_from ? { gte: toDate(input.invoice_date_from) } : {}), ...(input.invoice_date_to ? { lte: toDate(input.invoice_date_to) } : {}) } } : {}),
+      };
+      const [rows, total] = await prisma.$transaction([
+        prisma.invoice.findMany({ where, include: { client: { select: clientSelect }, items: true }, orderBy: [{ invoice_date: "desc" }, { created_at: "desc" }], skip: (input.page - 1) * input.limit, take: input.limit }),
+        prisma.invoice.count({ where }),
+      ]);
+      return { invoices: rows.map((row) => ({ ...row, payments: [] })), total };
+    } catch (error) { logger.error({ err: error, input }, "Failed to list invoices"); throw new InternalServerError("Failed to list invoices"); }
+  }
+
+  async updateDraft(id: string, input: UpdateInvoiceInput, total: Prisma.Decimal): Promise<InvoiceDetails> {
+    try {
+      return await prisma.$transaction(async (tx) => {
+        const current = await tx.invoice.findUnique({ where: { id }, select: { status: true } });
+        if (!current) throw new NotFoundError(`Invoice with ID '${id}' not found`);
+        if (current.status !== "draft") throw new ConflictError("Only draft invoices can be edited");
+        if (input.invoice_items) await tx.invoiceItem.deleteMany({ where: { invoice_id: id } });
+        const invoice = await tx.invoice.update({ where: { id }, data: { ...(input.invoice_date ? { invoice_date: toDate(input.invoice_date) } : {}), ...(input.due_date ? { due_date: toDate(input.due_date) } : {}), ...(input.currency ? { currency: input.currency } : {}), ...(input.exchange_rate_to_npr !== undefined ? { exchange_rate_to_npr: input.exchange_rate_to_npr == null ? null : decimal(input.exchange_rate_to_npr) } : {}), ...(input.invoice_items ? { total_amount: total, items: { create: input.invoice_items.map((item) => ({ description: item.description, quantity: item.quantity, rate: decimal(item.rate), amount: decimal(item.quantity).mul(decimal(item.rate)), vat_amount: item.vat_amount == null ? null : decimal(item.vat_amount) })) } } : {}), ...(input.invoice_items ? {} : {}) }, include: { client: { select: clientSelect }, items: true } });
+        return withPayments(tx, invoice);
+      });
+    } catch (error) { if (error instanceof ConflictError || error instanceof NotFoundError) throw error; logger.error({ err: error, invoiceId: id }, "Failed to update invoice"); throw new InternalServerError("Failed to update invoice"); }
+  }
+
+  async send(id: string): Promise<InvoiceDetails> { return this.transition(id, "sent", "Only draft invoices can be sent"); }
+
+  async void(id: string): Promise<InvoiceDetails> { return this.transition(id, "void", "Only unpaid invoices can be voided", true); }
+
+  async recordPayment(id: string, input: CreatePaymentInput): Promise<{ invoice: InvoiceDetails; payment: Payment; paidAmount: Prisma.Decimal; status: Invoice["status"] }> {
+    try {
+      return await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "Invoice" WHERE id = ${id} FOR UPDATE`;
+        const current = await tx.invoice.findUnique({ where: { id } });
+        if (!current) throw new NotFoundError(`Invoice with ID '${id}' not found`);
+        const amount = decimal(input.amount);
+        const remaining = decimal(current.total_amount).minus(decimal(current.paid_amount));
+        if (amount.gt(remaining)) throw new ConflictError("Payment exceeds the remaining invoice balance");
+        const paidAmount = decimal(current.paid_amount).plus(amount);
+        const status: Invoice["status"] = paidAmount.eq(decimal(current.total_amount)) ? "paid" : "partially_paid";
+        const payment = await tx.payment.create({ data: { direction: "in", amount: decimal(input.amount), currency: input.currency, payment_date: toDate(input.payment_date), account_id: input.account_id, method: input.method, allocated_to_type: "invoice", allocated_to_id: id, actual_npr_amount: input.actual_npr_amount == null ? null : decimal(input.actual_npr_amount) } });
+        const invoice = await tx.invoice.update({ where: { id }, data: { paid_amount: paidAmount, status }, include: { client: { select: clientSelect }, items: true } });
+        return { invoice: await withPayments(tx, invoice), payment, paidAmount, status };
+      }, { isolationLevel: "Serializable" });
+    } catch (error) { if (error instanceof ConflictError || error instanceof NotFoundError) throw error; logger.error({ err: error, invoiceId: id }, "Failed to record invoice payment"); throw new InternalServerError("Failed to record invoice payment"); }
+  }
+
+  async findAging(): Promise<InvoiceDetails[]> {
+    try { const rows = await prisma.invoice.findMany({ where: { status: { notIn: ["paid", "void"] } }, include: { client: { select: clientSelect }, items: true }, orderBy: { due_date: "asc" } }); return rows.map((row) => ({ ...row, payments: [] })); }
+    catch (error) { logger.error({ err: error }, "Failed to fetch accounts receivable aging"); throw new InternalServerError("Failed to fetch accounts receivable aging"); }
+  }
+
+  async recordAudit(input: { user_id?: string; action: string; entity_id: string; old_value?: Record<string, unknown>; new_value?: Record<string, unknown> }): Promise<void> {
+    try { const data: Prisma.AuditLogCreateInput = { user_id: input.user_id ?? null, action: input.action, entity_type: "Invoice", entity_id: input.entity_id }; if (input.old_value) data.old_value = input.old_value as Prisma.InputJsonValue; if (input.new_value) data.new_value = input.new_value as Prisma.InputJsonValue; await prisma.auditLog.create({ data }); }
+    catch (error) { logger.error({ err: error, invoiceId: input.entity_id, action: input.action }, "Failed to write invoice audit log"); }
+  }
+
+  async findActiveClient(id: string): Promise<{ id: string; currency: string } | null> {
+    try { return await prisma.client.findFirst({ where: { id, is_active: true }, select: { id: true, currency: true } }); }
+    catch (error) { logger.error({ err: error, clientId: id }, "Failed to validate invoice client"); throw new InternalServerError("Failed to validate invoice client"); }
+  }
+
+  async findActiveAccount(id: string): Promise<{ id: string } | null> {
+    try { return await prisma.account.findFirst({ where: { id, is_active: true }, select: { id: true } }); }
+    catch (error) { logger.error({ err: error, accountId: id }, "Failed to validate payment account"); throw new InternalServerError("Failed to validate payment account"); }
+  }
+
+  private async transition(id: string, status: Invoice["status"], message: string, rejectPaid = false): Promise<InvoiceDetails> {
+    try { return await prisma.$transaction(async (tx) => { const current = await tx.invoice.findUnique({ where: { id } }); if (!current) throw new NotFoundError(`Invoice with ID '${id}' not found`); if (status === "sent" && current.status !== "draft") throw new ConflictError(message); if (status === "void" && (current.status === "paid" || current.status === "void" || (rejectPaid && current.paid_amount.gt(0)))) throw new ConflictError(current.status === "paid" ? "A fully paid invoice cannot be voided" : "An invoice with payments cannot be voided"); const invoice = await tx.invoice.update({ where: { id }, data: { status }, include: { client: { select: clientSelect }, items: true } }); return withPayments(tx, invoice); }); }
+    catch (error) { if (error instanceof ConflictError || error instanceof NotFoundError) throw error; logger.error({ err: error, invoiceId: id }, "Failed to transition invoice"); throw new InternalServerError("Failed to update invoice status"); }
+  }
+
+  private mapError(error: unknown, message: string): never {
+    if (error instanceof ConflictError || error instanceof NotFoundError) throw error;
+    if (typeof error === "object" && error !== null && "code" in error) {
+      const code = (error as { code: string }).code;
+      if (code === "P2002") throw new ConflictError("Generated invoice number already exists; please retry");
+      if (code === "P2025") throw new NotFoundError("The requested invoice or client was not found");
+    }
+    logger.error({ err: error }, message);
+    throw new InternalServerError(message);
+  }
+}
+
+const decimal = (value: number | Prisma.Decimal) => new Prisma.Decimal(String(value));
+const toDate = (value: string) => new Date(`${value}T00:00:00.000Z`);
+const withPayments = async (client: { payment: { findMany(args: { where: { allocated_to_type: string; allocated_to_id: string }; orderBy: { payment_date: "asc" } }): Promise<Payment[]> } }, invoice: Invoice & { client: InvoiceDetails["client"]; items: InvoiceItem[] }): Promise<InvoiceDetails> => ({ ...invoice, payments: await client.payment.findMany({ where: { allocated_to_type: "invoice", allocated_to_id: invoice.id }, orderBy: { payment_date: "asc" } }) });
+
+export const invoicesRepository = new InvoicesRepository();

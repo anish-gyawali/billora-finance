@@ -190,8 +190,10 @@ model Invoice {
   total_amount         Decimal       @db.Decimal(14, 2)
   paid_amount          Decimal       @default(0) @db.Decimal(14, 2)
   journal_entry_id     String?
-
+  items                InvoiceItem[]
   @@index([client_id])
+   @@index([status])
+  @@index([due_date])
 }
 
 model InvoiceItem {
@@ -199,6 +201,7 @@ model InvoiceItem {
   created_at  DateTime @default(now())
   updated_at  DateTime @default(now())
   invoice_id  String
+  invoice     Invoice  @relation(fields: [invoice_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
   description String
   quantity    Int
   rate        Decimal  @db.Decimal(14, 2)
@@ -271,6 +274,9 @@ model Payment {
   allocated_to_type String
   allocated_to_id   String?
   journal_entry_id  String?
+  actual_npr_amount     Decimal?         @db.Decimal(14, 2)
+  @@index([allocated_to_type, allocated_to_id])
+  @@index([payment_date])
 }
 
 enum PaymentDirection {
