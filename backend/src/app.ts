@@ -31,6 +31,7 @@ import { paymentsRoutes } from "./modules/payments/payments.routes.js";
 import { salaryRunRoutes } from "./modules/salaries/salary-run.routes.js";
 import { salaryItemRoutes } from "./modules/salaries/salary-item.routes.js";
 import { bankAccountsRoutes } from "./bankaccounts/bankaccounts.routes.js";
+import { taxesRoutes } from "./modules/taxes/taxes.routes.js";
 
 export const app: Express = express();
 
@@ -105,6 +106,8 @@ app.use("/api/salary-runs", salaryRunRoutes);
 app.use("/salary-runs", salaryRunRoutes);
 app.use("/api/bank-accounts", bankAccountsRoutes);
 app.use("/bank-accounts", bankAccountsRoutes);
+app.use("/api/tax-rules", taxesRoutes);
+app.use("/tax-rules", taxesRoutes);
 
 // ─── Protected Route: Current User Profile ────────────────────────────────────
 // GET /api/auth/me  →  returns the authenticated user's SafeUser profile

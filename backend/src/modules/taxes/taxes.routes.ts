@@ -1,0 +1,21 @@
+import { Router } from "express";
+import { requireAuth, requireRole } from "../../common/middleware/auth.js";
+import { validate } from "../../common/middleware/validate.js";
+import { UserRole } from "../../generated/prisma/enums.js";
+import { taxesController } from "./taxes.controller.js";
+import { applicableQuerySchema, createTaxRuleSchema, taxRuleIdSchema, taxRuleQuerySchema, taxTypeParamSchema, updateTaxRuleSchema, verifyTaxRuleSchema } from "./taxes.validation.js";
+
+const router: Router = Router();
+const editors = requireRole(UserRole.founder, UserRole.accountant);
+const verifiers = requireRole(UserRole.founder, UserRole.accountant);
+const founderOnly = requireRole(UserRole.founder);
+router.get("/", requireAuth, validate({ query: taxRuleQuerySchema }), taxesController.list);
+router.post("/", requireAuth, editors, validate(createTaxRuleSchema), taxesController.create);
+router.get("/applicable", requireAuth, validate({ query: applicableQuerySchema }), taxesController.applicable);
+router.get("/history/:tax_type", requireAuth, validate({ params: taxTypeParamSchema }), taxesController.history);
+router.get("/:id", requireAuth, validate({ params: taxRuleIdSchema }), taxesController.get);
+router.put("/:id", requireAuth, editors, validate({ params: taxRuleIdSchema, body: updateTaxRuleSchema }), taxesController.update);
+router.post("/:id/verify", requireAuth, verifiers, validate({ params: taxRuleIdSchema, body: verifyTaxRuleSchema }), taxesController.verify);
+router.delete("/:id", requireAuth, founderOnly, validate({ params: taxRuleIdSchema }), taxesController.archive);
+export default router;
+export { router as taxesRoutes };

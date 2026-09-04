@@ -31,6 +31,8 @@ model User {
   approved_expenses Expense[] @relation("ExpenseApprovedBy")
   salary_items SalaryItem[]
   approved_salary_runs SalaryRun[]
+  created_tax_rules TaxRule[] @relation("TaxRuleCreator")
+  verified_tax_rules TaxRule[] @relation("TaxRuleVerifier")
 }
 
 model RefreshToken {
@@ -383,6 +385,19 @@ model TaxRule {
   effective_to           DateTime?
   notes                  String?
   verified_by_accountant Boolean   @default(false)
+  verified_by_user_id    String?
+  verified_at            DateTime?
+  created_by_user_id     String?
+  is_active              Boolean   @default(true)
+  deleted_at             DateTime?
+  verifiedByUser         User?     @relation("TaxRuleVerifier", fields: [verified_by_user_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  createdByUser          User?     @relation("TaxRuleCreator", fields: [created_by_user_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([tax_type, effective_from])
+  @@index([tax_type])
+  @@index([effective_from])
+  @@index([effective_to])
+  @@index([is_active])
 }
 
 enum TaxType {
