@@ -8,6 +8,7 @@ import { httpLogger } from "./config/logger.js";
 import { apiLimiter } from "./common/middleware/rateLimiter.js";
 import { errorHandler, notFoundHandler } from "./common/middleware/errorHandler.js";
 import { requireAuth } from "./common/middleware/auth.js";
+import { csrfProtection, issueCsrfToken } from "./common/middleware/csrf.js";
 import { checkDatabaseHealth, prisma } from "./lib/prisma.js";
 import { toSafeUser } from "./common/mappers/user.mapper.js";
 import { NotFoundError } from "./common/errors/AppError.js";
@@ -48,10 +49,10 @@ app.use(helmet());
 // CORS configuration
 app.use(
   cors({
-    origin: env.CORS_ORIGIN,
+    origin: env.CORS_ORIGIN.split(",").map((origin) => origin.trim()).filter(Boolean),
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Request-Id"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Request-Id", "X-CSRF-Token"],
   })
 );
 
@@ -62,9 +63,13 @@ app.use(httpLogger);
 app.use(cookieParser(env.COOKIE_SECRET));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use(csrfProtection);
 
-// Rate limiting for API routes
-app.use("/api", apiLimiter);
+app.get(["/api/auth/csrf", "/auth/csrf"], issueCsrfToken);
+
+// Rate limiting for every application route, including the legacy aliases below.
+// Mounting globally prevents /documents, /auth, and other aliases from bypassing limits.
+app.use(apiLimiter);
 
 
 app.use("/api/auth", registerRoutes);
@@ -162,7 +167,7 @@ app.get("/api/health", async (_req, res) => {
     uptimeSeconds: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
     service: "billora-finance-backend",
-    database: dbHealth,
+    database: env.NODE_ENV === "production" ? { status: dbHealth.status, latencyMs: dbHealth.latencyMs, timestamp: dbHealth.timestamp } : dbHealth,
   });
 });
 

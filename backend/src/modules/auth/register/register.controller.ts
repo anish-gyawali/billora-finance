@@ -60,7 +60,7 @@ export class RegisterController {
         secure: env.NODE_ENV === "production",
         sameSite: env.NODE_ENV === "production" ? "none" : "lax",
         ...(env.COOKIE_DOMAIN ? { domain: env.COOKIE_DOMAIN } : {}),
-        path: "/auth/refresh", // Restrict path to ONLY refresh endpoint (Security!)
+        path: "/", // Both /auth/refresh and /api/auth/refresh are supported.
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       });
 

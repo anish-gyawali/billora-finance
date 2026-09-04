@@ -25,6 +25,11 @@ async function bootstrap(): Promise<void> {
     }
 
     server = app.listen(env.PORT, () => {
+      if (server) {
+        server.setTimeout(120_000);
+        server.headersTimeout = 35_000;
+        server.keepAliveTimeout = 5_000;
+      }
       logger.info(
         {
           port: env.PORT,

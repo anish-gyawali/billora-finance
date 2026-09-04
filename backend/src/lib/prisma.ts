@@ -10,7 +10,7 @@ const pool = new pg.Pool({
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
   ssl: {
-    rejectUnauthorized: false,
+    rejectUnauthorized: env.DATABASE_SSL_REJECT_UNAUTHORIZED,
   },
 });
 

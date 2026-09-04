@@ -14,12 +14,20 @@ const envSchema = z.object({
   COOKIE_DOMAIN: z.string().optional(),
   TRUST_PROXY: z
     .union([z.boolean(), z.string()])
-    .default("true")
+    .default("false")
     .transform((val) => {
       if (typeof val === "boolean") return val;
       return val === "true" || val === "1";
     }),
-  CORS_ORIGIN: z.string().default("http://localhost:3000"),
+  CORS_ORIGIN: z.string().min(1).default("http://localhost:3000"),
+  CSRF_SECRET: z.string().min(16).optional(),
+  DATABASE_SSL_REJECT_UNAUTHORIZED: z
+    .union([z.boolean(), z.string()])
+    .default("true")
+    .transform((val) => {
+      if (typeof val === "boolean") return val;
+      return val !== "false" && val !== "0";
+    }),
   BCRYPT_SALT_ROUNDS: z.coerce.number().default(12),
   CLOUDINARY_CLOUD_NAME: z.string().min(1, "CLOUDINARY_CLOUD_NAME is required"),
   CLOUDINARY_API_KEY: z.string().min(1, "CLOUDINARY_API_KEY is required"),

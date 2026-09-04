@@ -5,6 +5,4 @@ backend/node_modules/
 .agents
 .claude
 .windsurf
-prisma/migrations
-/tests/
 /endpoints.md
