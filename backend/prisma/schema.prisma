@@ -27,6 +27,8 @@ model User {
   mfa_secret          String?
   refreshTokens RefreshToken[]
   journal_entries JournalEntry[] @relation("JournalEntryCreator")
+  paid_expenses Expense[] @relation("ExpensePaidByUser")
+  approved_expenses Expense[] @relation("ExpenseApprovedBy")
 }
 
 model RefreshToken {
@@ -66,6 +68,8 @@ model Account {
   parent         Account?      @relation("AccountHierarchy", fields: [parent_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
   children       Account[]     @relation("AccountHierarchy")
   journal_lines  JournalLine[]
+  expense_items  ExpenseItem[]
+  paid_expenses  Expense[]
 
   @@index([parent_id])
 }
@@ -119,6 +123,7 @@ model JournalEntry {
   reversed_entry    JournalEntry?    @relation("JournalEntryReversal", fields: [reversed_entry_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
   reversal_entries  JournalEntry[]   @relation("JournalEntryReversal")
   lines             JournalLine[]
+  expenses          Expense[]
 
   @@index([period_id])
   @@index([created_by])
@@ -226,6 +231,7 @@ model Vendor {
   pan_number   String?
   vat_number   String?
   contact_info String?
+  expenses Expense[]
 }
 
 model Expense {
@@ -233,25 +239,53 @@ model Expense {
   created_at         DateTime      @default(now())
   updated_at         DateTime      @default(now())
   expense_date       DateTime
+
   vendor_id          String?
+  vendor             Vendor?       @relation(fields: [vendor_id], references: [id], onDelete: Restrict)
+
   paid_by_user_id    String?
+  paid_by_user       User?         @relation("ExpensePaidByUser", fields: [paid_by_user_id], references: [id], onDelete: Restrict)
+
   payment_account_id String?
-  status             ExpenseStatus
+  payment_account    Account?      @relation(fields: [payment_account_id], references: [id], onDelete: Restrict)
+
+  status             ExpenseStatus @default(draft)
+
   approved_by        String?
+  approver           User?         @relation("ExpenseApprovedBy", fields: [approved_by], references: [id], onDelete: Restrict)
+
   total_amount       Decimal       @db.Decimal(14, 2)
+
   journal_entry_id   String?
+  journal_entry      JournalEntry? @relation(fields: [journal_entry_id], references: [id], onDelete: Restrict)
+
+  items              ExpenseItem[]
+
+  @@index([vendor_id])
+  @@index([paid_by_user_id])
+  @@index([payment_account_id])
+  @@index([approved_by])
+  @@index([status])
 }
 
 model ExpenseItem {
   id          String   @id @default(uuid())
   created_at  DateTime @default(now())
   updated_at  DateTime @default(now())
+
   expense_id  String
+  expense     Expense  @relation(fields: [expense_id], references: [id], onDelete: Cascade)
+
   account_id  String
+  account     Account  @relation(fields: [account_id], references: [id], onDelete: Restrict)
+
   description String
   amount      Decimal  @db.Decimal(14, 2)
   vat_amount  Decimal? @db.Decimal(14, 2)
   tds_amount  Decimal? @db.Decimal(14, 2)
+
+  @@index([expense_id])
+  @@index([account_id])
 }
 
 enum ExpenseStatus {
