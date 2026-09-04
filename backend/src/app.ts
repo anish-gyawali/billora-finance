@@ -32,6 +32,7 @@ import { salaryRunRoutes } from "./modules/salaries/salary-run.routes.js";
 import { salaryItemRoutes } from "./modules/salaries/salary-item.routes.js";
 import { bankAccountsRoutes } from "./bankaccounts/bankaccounts.routes.js";
 import { taxesRoutes } from "./modules/taxes/taxes.routes.js";
+import { auditRoutes } from "./modules/audit/audit.routes.js";
 
 export const app: Express = express();
 
@@ -108,6 +109,8 @@ app.use("/api/bank-accounts", bankAccountsRoutes);
 app.use("/bank-accounts", bankAccountsRoutes);
 app.use("/api/tax-rules", taxesRoutes);
 app.use("/tax-rules", taxesRoutes);
+app.use("/api/audit-log", auditRoutes);
+app.use("/audit-log", auditRoutes);
 
 // ─── Protected Route: Current User Profile ────────────────────────────────────
 // GET /api/auth/me  →  returns the authenticated user's SafeUser profile

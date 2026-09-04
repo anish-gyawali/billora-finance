@@ -428,6 +428,24 @@ model AuditLog {
   entity_id   String
   old_value   Json?
   new_value   Json?
+  user_name   String?
+  user_role   UserRole?
+  action_status String   @default("success")
+  action_reason String?
+  entity_name String?
+  related_entity_type String?
+  related_entity_id String?
+  changed_fields Json?
+  ip_address String?
+  user_agent String?
+  request_id String?
+  notes String?
+  @@index([created_at])
+  @@index([user_id, created_at])
+  @@index([entity_type, created_at])
+  @@index([entity_type, entity_id])
+  @@index([action])
+  @@index([action_status])
 }
 
 model BankAccount {
