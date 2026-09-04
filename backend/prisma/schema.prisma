@@ -70,6 +70,7 @@ model Account {
   journal_lines  JournalLine[]
   expense_items  ExpenseItem[]
   paid_expenses  Expense[]
+  payments       Payment[]
 
   @@index([parent_id])
 }
@@ -304,6 +305,7 @@ model Payment {
   currency          String
   payment_date      DateTime
   account_id        String
+  account           Account          @relation(fields: [account_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
   method            PaymentMethod
   allocated_to_type String
   allocated_to_id   String?
@@ -311,6 +313,7 @@ model Payment {
   actual_npr_amount     Decimal?         @db.Decimal(14, 2)
   @@index([allocated_to_type, allocated_to_id])
   @@index([payment_date])
+  @@index([account_id])
 }
 
 enum PaymentDirection {
@@ -334,6 +337,7 @@ model SalaryRun {
   status           SalaryStatus
   journal_entry_id String?
   approved_by      String?
+  items            SalaryItem[]
 }
 
 model SalaryItem {
@@ -341,6 +345,7 @@ model SalaryItem {
   created_at    DateTime @default(now())
   updated_at    DateTime @default(now())
   salary_run_id String
+  salary_run    SalaryRun @relation(fields: [salary_run_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
   user_id       String
   gross_amount  Decimal  @db.Decimal(14, 2)
   tds_amount    Decimal  @db.Decimal(14, 2)
