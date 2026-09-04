@@ -166,6 +166,13 @@ model Client {
   pan_number    String?
   billing_email String
   currency      String   @default("USD")
+  is_active     Boolean  @default(true)
+  deleted_at    DateTime?
+  invoices      Invoice[]
+
+  @@index([country])
+  @@index([currency])
+  @@index([is_active])
 }
 
 model Invoice {
@@ -173,6 +180,7 @@ model Invoice {
   created_at           DateTime      @default(now())
   updated_at           DateTime      @default(now())
   client_id            String
+  client               Client        @relation(fields: [client_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
   invoice_number       String        @unique
   invoice_date         DateTime
   due_date             DateTime
@@ -182,6 +190,8 @@ model Invoice {
   total_amount         Decimal       @db.Decimal(14, 2)
   paid_amount          Decimal       @default(0) @db.Decimal(14, 2)
   journal_entry_id     String?
+
+  @@index([client_id])
 }
 
 model InvoiceItem {

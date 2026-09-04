@@ -23,6 +23,7 @@ import { accountRoutes } from "./modules/accounts/account.routes.js";
 import { periodRoutes } from "./modules/periods/period.routes.js";
 import { journalEntryRoutes } from "./modules/journals/journal-entry.routes.js";
 import { journalLineRoutes } from "./modules/journal-line/journal-line.routes.js";
+import { clientsRoutes } from "./modules/client/clients.routes.js";
 
 export const app: Express = express();
 
@@ -53,12 +54,7 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 // Rate limiting for API routes
 app.use("/api", apiLimiter);
 
-// ─── Auth Routes ──────────────────────────────────────────────────────────────
-// Each sub-router is mounted independently under /api/auth and /auth.
-// POST /api/auth/register   →  register.routes.ts
-// POST /api/auth/login      →  login.routes.ts
-// POST /api/auth/logout     →  logout.routes.ts
-// POST /api/auth/refresh    →  refresh.routes.ts
+
 app.use("/api/auth", registerRoutes);
 app.use("/api/auth", loginRoutes);
 app.use("/api/auth", logoutRoutes);
@@ -82,6 +78,12 @@ app.use("/api/periods", periodRoutes);
 app.use("/api/journal-entries", journalEntryRoutes);
 app.use("/api/journal-lines", journalLineRoutes);
 app.use("/periods", periodRoutes);
+
+// Client Management (/api/clients)
+app.use("/api/clients", clientsRoutes);
+app.use("/api/client", clientsRoutes);
+app.use("/clients", clientsRoutes);
+app.use("/client", clientsRoutes);
 
 // ─── Protected Route: Current User Profile ────────────────────────────────────
 // GET /api/auth/me  →  returns the authenticated user's SafeUser profile
@@ -145,6 +147,7 @@ app.get("/", (_req, res) => {
         me: "/api/auth/me",
         chartOfAccounts: "/api/chart-of-accounts",
         periods: "/api/periods",
+        clients: "/api/clients",
       },
     },
   });
