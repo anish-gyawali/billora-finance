@@ -57,11 +57,12 @@ export class InvoicesService {
     if (current.status === "void") throw new ConflictError("Void invoices cannot receive payments");
     if (current.status === "draft") throw new ConflictError("Draft invoices must be sent before receiving payments");
     if (input.currency !== current.currency) throw new BadRequestError("Payment currency must match invoice currency");
+    if (current.currency !== "NPR" && input.actual_npr_amount == null) throw new BadRequestError("Foreign-currency payments require actual_npr_amount");
     if (!(await this.repository.findActiveAccount(input.account_id))) throw new BadRequestError("Payment account does not exist or is inactive");
     const amount = money(input.amount);
     const remaining = money(current.total_amount).minus(money(current.paid_amount));
     if (amount.gt(remaining)) throw new BadRequestError("Payment exceeds the remaining invoice balance");
-    const result = await this.repository.recordPayment(id, input);
+    const result = await this.repository.recordPayment(id, input, actorId);
     const paidAmount = result.paidAmount;
     const status = result.status;
     const fx = current.currency === "USD" && input.actual_npr_amount != null && current.exchange_rate_to_npr != null
@@ -75,7 +76,7 @@ export class InvoicesService {
     const current = await this.get(id);
     if (current.status === "paid") throw new ConflictError("A fully paid invoice cannot be voided");
     if (money(current.paid_amount).gt(0)) throw new ConflictError("An invoice with partial payments cannot be voided; reverse or refund its payments first");
-    const invoice = await this.repository.void(id);
+    const invoice = await this.repository.void(id, actorId);
     await this.audit(actorId, "INVOICE_VOIDED", id, { status: current.status }, { status: invoice.status });
     return invoice;
   }

@@ -99,20 +99,32 @@ export class InvoicesRepository implements IInvoicesRepository {
     }); } catch (error) { if (error instanceof ConflictError || error instanceof NotFoundError) throw error; logger.error({ err: error, invoiceId: id }, "Failed to issue invoice"); throw new InternalServerError("Failed to issue invoice"); }
   }
 
-  async void(id: string): Promise<InvoiceDetails> { return this.transition(id, "void", "Only unpaid invoices can be voided", true); }
+  async void(id: string, actorId: string): Promise<InvoiceDetails> { try { return await prisma.$transaction(async (tx) => { await tx.$queryRaw`SELECT id FROM "Invoice" WHERE id = ${id} FOR UPDATE`; const current = await tx.invoice.findUnique({ where: { id }, include: { client: { select: clientSelect }, items: true } }); if (!current) throw new NotFoundError(`Invoice with ID '${id}' not found`); if (current.status === "paid" || current.status === "void" || current.paid_amount.gt(0)) throw new ConflictError("Only unpaid invoices can be voided"); if (current.journal_entry_id) { const original = await tx.journalEntry.findUnique({ where: { id: current.journal_entry_id }, include: { lines: true } }); if (!original || original.status !== "posted") throw new ConflictError("The invoice journal entry cannot be reversed"); const period = await tx.accountingPeriod.findFirst({ where: { status: "open", period_start: { lte: current.invoice_date }, period_end: { gte: current.invoice_date } } }); if (!period) throw new ConflictError("The invoice period is closed; create a manual reversal in an open period"); await tx.journalEntry.update({ where: { id: original.id }, data: { status: "reversed" } }); await postJournalEntry(tx, { entry_date: current.invoice_date, period_id: period.id, source_type: "reversal", source_id: original.id, created_by: actorId, memo: `Reversal of invoice ${current.invoice_number}`, lines: original.lines.map((line) => ({ account_id: line.account_id, debit: line.credit, credit: line.debit, description: `Reversal: ${line.description ?? "Invoice"}` })) }); } const invoice = await tx.invoice.update({ where: { id }, data: { status: "void" }, include: { client: { select: clientSelect }, items: true } }); return withPayments(tx, invoice); }); } catch (error) { if (error instanceof ConflictError || error instanceof NotFoundError) throw error; logger.error({ err: error, invoiceId: id }, "Failed to void invoice"); throw new InternalServerError("Failed to void invoice"); } }
 
-  async recordPayment(id: string, input: CreatePaymentInput): Promise<{ invoice: InvoiceDetails; payment: Payment; paidAmount: Prisma.Decimal; status: Invoice["status"] }> {
+  async recordPayment(id: string, input: CreatePaymentInput, actorId: string): Promise<{ invoice: InvoiceDetails; payment: Payment; paidAmount: Prisma.Decimal; status: Invoice["status"] }> {
     try {
       return await prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM "Invoice" WHERE id = ${id} FOR UPDATE`;
         const current = await tx.invoice.findUnique({ where: { id } });
         if (!current) throw new NotFoundError(`Invoice with ID '${id}' not found`);
         const amount = decimal(input.amount);
+        const nprAmount = current.currency === "NPR" ? amount : decimal(input.actual_npr_amount ?? 0);
+        if (nprAmount.lte(0)) throw new ConflictError("A valid NPR payment amount is required");
         const remaining = decimal(current.total_amount).minus(decimal(current.paid_amount));
         if (amount.gt(remaining)) throw new ConflictError("Payment exceeds the remaining invoice balance");
         const paidAmount = decimal(current.paid_amount).plus(amount);
         const status: Invoice["status"] = paidAmount.eq(decimal(current.total_amount)) ? "paid" : "partially_paid";
         const payment = await tx.payment.create({ data: { direction: "in", amount: decimal(input.amount), currency: input.currency, payment_date: toDate(input.payment_date), account_id: input.account_id, method: input.method, allocated_to_type: "invoice", allocated_to_id: id, actual_npr_amount: input.actual_npr_amount == null ? null : decimal(input.actual_npr_amount) } });
+        const period = await tx.accountingPeriod.findFirst({ where: { status: "open", period_start: { lte: toDate(input.payment_date) }, period_end: { gte: toDate(input.payment_date) } } });
+        if (!period) throw new ConflictError("No open accounting period covers the payment date");
+        const ar = await findAccountByCode(tx, current.currency === "NPR" ? "1200" : "1210");
+        if (!ar) throw new ConflictError("Invoice payment requires the configured receivable account");
+        const receivableValue = amount.mul(current.currency === "NPR" ? 1 : decimal(current.exchange_rate_to_npr ?? 0));
+        const lines: { account_id: string; debit?: Prisma.Decimal; credit?: Prisma.Decimal; description?: string }[] = [{ account_id: input.account_id, debit: nprAmount, description: "Bank or cash receipt" }, { account_id: ar.id, credit: receivableValue, description: "Accounts receivable settlement" }];
+        const difference = nprAmount.minus(receivableValue);
+        if (!difference.isZero()) { const fx = await findAccountByCode(tx, difference.gt(0) ? "4090" : "5090"); if (!fx) throw new ConflictError("FX gain/loss account is required for this payment"); if (difference.gt(0)) lines.push({ account_id: fx.id, credit: difference, description: "Realized FX gain" }); else lines.push({ account_id: fx.id, debit: difference.abs(), description: "Realized FX loss" }); }
+        const journal = await postJournalEntry(tx, { entry_date: toDate(input.payment_date), period_id: period.id, source_type: "payment", source_id: payment.id, created_by: actorId, memo: `Invoice payment ${payment.id}`, lines });
+        await tx.payment.update({ where: { id: payment.id }, data: { journal_entry_id: journal.id } });
         const invoice = await tx.invoice.update({ where: { id }, data: { paid_amount: paidAmount, status }, include: { client: { select: clientSelect }, items: true } });
         return { invoice: await withPayments(tx, invoice), payment, paidAmount, status };
       }, { isolationLevel: "Serializable" });

@@ -2,6 +2,7 @@ import { Prisma, type Account, type Payment } from "../../generated/prisma/clien
 import { prisma } from "../../lib/prisma.js";
 import { ConflictError, BadRequestError, InternalServerError, NotFoundError } from "../../common/errors/AppError.js";
 import { logger } from "../../config/logger.js";
+import { postJournalEntry } from "../../lib/accounting/postJournalEntry.js";
 import type { CreatePaymentInput, QueryPaymentsInput, UpdatePaymentInput } from "./payments.validation.js";
 import type { IPaymentsRepository, PaymentRecord } from "./payments.repository.interface.js";
 
@@ -10,8 +11,8 @@ const day = (value: string) => new Date(`${value}T00:00:00.000Z`);
 const include = { account: true } as const;
 
 export class PaymentsRepository implements IPaymentsRepository {
-  async create(input: CreatePaymentInput): Promise<PaymentRecord> {
-    try { return await prisma.$transaction(async (tx) => { const payment = await this.applyPayment(tx, null, input); return payment; }, { isolationLevel: "Serializable" }); }
+  async create(input: CreatePaymentInput, actorId: string): Promise<PaymentRecord> {
+    try { return await prisma.$transaction(async (tx) => this.applyPayment(tx, null, input, actorId), { isolationLevel: "Serializable" }); }
     catch (error) { return this.mapError(error, "Failed to create payment"); }
   }
 
@@ -25,8 +26,8 @@ export class PaymentsRepository implements IPaymentsRepository {
     catch (error) { logger.error({ err: error }, "Failed to list payments"); throw new InternalServerError("Failed to list payments"); }
   }
 
-  async update(id: string, input: UpdatePaymentInput): Promise<PaymentRecord> {
-    try { return await prisma.$transaction(async (tx) => { await tx.$queryRaw`SELECT id FROM "Payment" WHERE id = ${id} FOR UPDATE`; const current = await tx.payment.findUnique({ where: { id } }); if (!current) throw new NotFoundError(`Payment with ID '${id}' not found`); if (current.journal_entry_id) throw new ConflictError("Payments linked to journal entries cannot be edited"); const nextType = (input.allocated_to_type ?? current.allocated_to_type) as "invoice" | "vendor_expense" | "salary_run" | "direct"; const next: CreatePaymentInput = { direction: input.direction ?? current.direction, amount: input.amount ?? Number(current.amount), currency: (input.currency ?? current.currency) as "NPR" | "USD", payment_date: input.payment_date ?? current.payment_date.toISOString().slice(0, 10), account_id: input.account_id ?? current.account_id, method: input.method ?? current.method, allocated_to_type: nextType, allocated_to_id: nextType === "direct" ? null : input.allocated_to_id !== undefined ? input.allocated_to_id : current.allocated_to_id, journal_entry_id: null, actual_npr_amount: input.actual_npr_amount !== undefined ? input.actual_npr_amount : current.actual_npr_amount == null ? null : Number(current.actual_npr_amount) }; await this.removePaymentEffect(tx, current); const payment = await this.applyPayment(tx, id, next); return payment; }, { isolationLevel: "Serializable" }); }
+  async update(id: string, input: UpdatePaymentInput, actorId: string): Promise<PaymentRecord> {
+    try { return await prisma.$transaction(async (tx) => { await tx.$queryRaw`SELECT id FROM "Payment" WHERE id = ${id} FOR UPDATE`; const current = await tx.payment.findUnique({ where: { id } }); if (!current) throw new NotFoundError(`Payment with ID '${id}' not found`); if (current.journal_entry_id) throw new ConflictError("Payments linked to journal entries cannot be edited; reverse and recreate them"); const nextType = (input.allocated_to_type ?? current.allocated_to_type) as "invoice" | "vendor_expense" | "salary_run" | "direct"; const next: CreatePaymentInput = { direction: input.direction ?? current.direction, amount: input.amount ?? Number(current.amount), currency: (input.currency ?? current.currency) as "NPR" | "USD", payment_date: input.payment_date ?? current.payment_date.toISOString().slice(0, 10), account_id: input.account_id ?? current.account_id, method: input.method ?? current.method, allocated_to_type: nextType, allocated_to_id: nextType === "direct" ? null : input.allocated_to_id !== undefined ? input.allocated_to_id : current.allocated_to_id, journal_entry_id: null, actual_npr_amount: input.actual_npr_amount !== undefined ? input.actual_npr_amount : current.actual_npr_amount == null ? null : Number(current.actual_npr_amount) }; await this.removePaymentEffect(tx, current); return this.applyPayment(tx, id, next, actorId); }, { isolationLevel: "Serializable" }); }
     catch (error) { return this.mapError(error, "Failed to update payment"); }
   }
 
@@ -42,11 +43,22 @@ export class PaymentsRepository implements IPaymentsRepository {
 
   async recordAudit(input: { user_id?: string; action: string; entity_id: string; old_value?: Record<string, unknown>; new_value?: Record<string, unknown> }): Promise<void> { try { const data: Prisma.AuditLogCreateInput = { user_id: input.user_id ?? null, action: input.action, entity_type: "Payment", entity_id: input.entity_id }; if (input.old_value) data.old_value = input.old_value as Prisma.InputJsonValue; if (input.new_value) data.new_value = input.new_value as Prisma.InputJsonValue; await prisma.auditLog.create({ data }); } catch (error) { logger.error({ err: error, paymentId: input.entity_id, action: input.action }, "Failed to write payment audit log"); } }
 
-  private async applyPayment(tx: Prisma.TransactionClient, excludingId: string | null, input: CreatePaymentInput): Promise<PaymentRecord> {
+  private async applyPayment(tx: Prisma.TransactionClient, excludingId: string | null, input: CreatePaymentInput, actorId: string): Promise<PaymentRecord> {
     await this.validateTarget(tx, excludingId, input);
     const payment = await tx.payment.create({ data: { direction: input.direction, amount: d(input.amount), currency: input.currency, payment_date: day(input.payment_date), account_id: input.account_id, method: input.method, allocated_to_type: input.allocated_to_type, allocated_to_id: input.allocated_to_id ?? null, journal_entry_id: input.journal_entry_id ?? null, actual_npr_amount: input.actual_npr_amount == null ? null : d(input.actual_npr_amount) }, include });
+    if (!input.journal_entry_id) { const journal = await this.postPaymentJournal(tx, payment.id, excludingId, input, actorId); return tx.payment.update({ where: { id: payment.id }, data: { journal_entry_id: journal.id }, include }); }
     if (input.allocated_to_type === "invoice" && input.allocated_to_id) await this.adjustInvoice(tx, input.allocated_to_id, d(input.amount));
     return payment;
+  }
+
+  private async postPaymentJournal(tx: Prisma.TransactionClient, paymentId: string, excludingId: string | null, input: CreatePaymentInput, actorId: string) {
+    if (input.allocated_to_type === "direct") throw new BadRequestError("Direct payments require a pre-created journal_entry_id");
+    const period = await tx.accountingPeriod.findFirst({ where: { status: "open", period_start: { lte: day(input.payment_date) }, period_end: { gte: day(input.payment_date) } } }); if (!period) throw new ConflictError("No open accounting period covers the payment date");
+    let debitAccount = input.account_id; let creditAccount = input.account_id; let amount = d(input.amount);
+    if (input.allocated_to_type === "invoice") { const invoice = await tx.invoice.findUnique({ where: { id: input.allocated_to_id! } }); if (!invoice) throw new NotFoundError("Invoice allocation target was not found"); if (input.direction !== "in") throw new BadRequestError("Invoice payments must be incoming"); const ar = await tx.account.findFirst({ where: { code: invoice.currency === "NPR" ? "1200" : "1210", is_active: true }, select: { id: true } }); if (!ar) throw new ConflictError("Receivable account is not configured"); amount = invoice.currency === "NPR" ? d(input.amount) : d(input.actual_npr_amount ?? 0); if (amount.lte(0)) throw new BadRequestError("Foreign-currency payments require actual_npr_amount"); const receivable = d(input.amount).mul(invoice.currency === "NPR" ? 1 : d(invoice.exchange_rate_to_npr ?? 0)); const lines = [{ account_id: input.account_id, debit: amount, description: "Bank or cash receipt" }, { account_id: ar.id, credit: receivable, description: "Accounts receivable settlement" }]; const diff = amount.minus(receivable); if (!diff.isZero()) { const fx = await tx.account.findFirst({ where: { code: diff.gt(0) ? "4090" : "5090", is_active: true }, select: { id: true } }); if (!fx) throw new ConflictError("FX gain/loss account is not configured"); lines.push(diff.gt(0) ? { account_id: fx.id, credit: diff, description: "Realized FX gain" } : { account_id: fx.id, debit: diff.abs(), description: "Realized FX loss" }); } return postJournalEntry(tx, { entry_date: day(input.payment_date), period_id: period.id, source_type: "payment", source_id: paymentId, created_by: actorId, memo: `Payment ${paymentId}`, lines }); }
+    if (input.allocated_to_type === "vendor_expense") { const expense = await tx.expense.findUnique({ where: { id: input.allocated_to_id! } }); if (!expense) throw new NotFoundError("Expense allocation target was not found"); if (expense.payment_account_id) throw new ConflictError("This expense was already paid during posting"); debitAccount = (await tx.account.findFirst({ where: { code: "2010", is_active: true }, select: { id: true } }))?.id ?? ""; if (!debitAccount) throw new ConflictError("Accounts payable account is not configured"); }
+    if (input.allocated_to_type === "salary_run") { const salary = await tx.salaryRun.findUnique({ where: { id: input.allocated_to_id! } }); if (!salary) throw new NotFoundError("Salary run allocation target was not found"); debitAccount = (await tx.account.findFirst({ where: { code: "2200", is_active: true }, select: { id: true } }))?.id ?? ""; if (!debitAccount) throw new ConflictError("Salary payable account is not configured"); }
+    return postJournalEntry(tx, { entry_date: day(input.payment_date), period_id: period.id, source_type: "payment", source_id: paymentId, created_by: actorId, memo: `Payment ${paymentId}`, lines: [{ account_id: debitAccount, debit: amount, description: "Payment settlement" }, { account_id: creditAccount, credit: amount, description: "Bank or cash payment" }] });
   }
 
   private async validateTarget(tx: Prisma.TransactionClient, excludingId: string | null, input: CreatePaymentInput): Promise<void> {
