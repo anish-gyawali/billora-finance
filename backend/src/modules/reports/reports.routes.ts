@@ -1,0 +1,13 @@
+import { Router } from "express";
+import { requireAuth, requireRole } from "../../common/middleware/auth.js";
+import { validate } from "../../common/middleware/validate.js";
+import { UserRole } from "../../generated/prisma/enums.js";
+import { reportsController } from "./reports.controller.js";
+import { balanceSheetQuerySchema, profitLossQuerySchema, trialBalanceQuerySchema } from "./reports.validation.js";
+const router: Router = Router();
+const finance = requireRole(UserRole.founder, UserRole.accountant);
+router.get("/trial-balance", requireAuth, finance, validate({ query: trialBalanceQuerySchema }), reportsController.trialBalance);
+router.get("/profit-loss", requireAuth, finance, validate({ query: profitLossQuerySchema }), reportsController.profitLoss);
+router.get("/balance-sheet", requireAuth, finance, validate({ query: balanceSheetQuerySchema }), reportsController.balanceSheet);
+export default router;
+export { router as reportsRoutes };
