@@ -8,6 +8,7 @@ Inventory derived from the route modules and mounts in `src/app.ts`. The `/api` 
 - `POST /api/auth/login` | public, auth rate-limited | body: email, password
 - `POST /api/auth/logout` | public/session, auth rate-limited | body: optional csrfToken
 - `POST /api/auth/refresh` | refresh-token cookie, auth rate-limited | no body
+- `POST /api/auth/change-password` | authenticated; required after founder provisioning | body: currentPassword, newPassword, newPasswordConfirm
 - `GET /api/auth/me` | authenticated | no parameters
 
 ## Accounts
@@ -81,7 +82,7 @@ Inventory derived from the route modules and mounts in `src/app.ts`. The `/api` 
 ## Payments
 
 - `GET /api/payments` | founder/accountant | query: payment filters, pagination
-- `POST /api/payments` | founder/accountant | body: payment payload
+- `POST /api/payments` | founder/accountant | body: payment payload; optional `Idempotency-Key` header prevents duplicate retries
 - `GET /api/payments/:id` | founder/accountant | path: UUID id
 - `PUT /api/payments/:id` | founder/accountant | path: UUID id, body: payment update
 
@@ -138,6 +139,7 @@ Inventory derived from the route modules and mounts in `src/app.ts`. The `/api` 
 
 - `GET /api/users` | founder | query: user filters, pagination
 - `POST /api/users` | founder | body: user payload
+- `POST /api/users/:id/reset-password` | founder | body: password, passwordConfirm; revokes sessions and requires first-login change
 - `GET /api/users/:id` | founder | path: UUID id
 - `PATCH /api/users/:id` | founder | path: UUID id, body: user update
 

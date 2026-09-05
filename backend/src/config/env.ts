@@ -20,6 +20,10 @@ const envSchema = z.object({
       return val === "true" || val === "1";
     }),
   CORS_ORIGIN: z.string().min(1).default("http://localhost:3000"),
+  ALLOW_PUBLIC_REGISTRATION: z
+    .union([z.boolean(), z.string()])
+    .default("false")
+    .transform((val) => (typeof val === "boolean" ? val : val === "true" || val === "1")),
   CSRF_SECRET: z.string().min(16).optional(),
   DATABASE_SSL_REJECT_UNAUTHORIZED: z
     .union([z.boolean(), z.string()])

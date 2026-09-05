@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { Prisma, type Account, type Payment } from "../../generated/prisma/client.js";
 import { prisma } from "../../lib/prisma.js";
 import { ConflictError, BadRequestError, InternalServerError, NotFoundError } from "../../common/errors/AppError.js";
@@ -11,9 +12,21 @@ const day = (value: string) => new Date(`${value}T00:00:00.000Z`);
 const include = { account: true } as const;
 
 export class PaymentsRepository implements IPaymentsRepository {
-  async create(input: CreatePaymentInput, actorId: string): Promise<PaymentRecord> {
-    try { return await prisma.$transaction(async (tx) => this.applyPayment(tx, null, input, actorId), { isolationLevel: "Serializable" }); }
-    catch (error) { return this.mapError(error, "Failed to create payment"); }
+  async create(input: CreatePaymentInput, actorId: string, idempotencyKey?: string): Promise<PaymentRecord> {
+    const scopedKey = idempotencyKey ? crypto.createHash("sha256").update(`${actorId}:${idempotencyKey}`).digest("hex") : undefined;
+    if (scopedKey) {
+      const existing = await this.findByIdempotencyKey(scopedKey);
+      if (existing) return this.returnExistingOrConflict(existing, input);
+    }
+
+    try { return await prisma.$transaction(async (tx) => this.applyPayment(tx, null, input, actorId, scopedKey), { isolationLevel: "Serializable" }); }
+    catch (error) {
+      if (scopedKey && error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        const existing = await this.findByIdempotencyKey(scopedKey);
+        if (existing) return this.returnExistingOrConflict(existing, input);
+      }
+      return this.mapError(error, "Failed to create payment");
+    }
   }
 
   async findById(id: string): Promise<PaymentRecord | null> {
@@ -43,9 +56,9 @@ export class PaymentsRepository implements IPaymentsRepository {
 
   async recordAudit(input: { user_id?: string; action: string; entity_id: string; old_value?: Record<string, unknown>; new_value?: Record<string, unknown> }): Promise<void> { try { const data: Prisma.AuditLogCreateInput = { user_id: input.user_id ?? null, action: input.action, entity_type: "Payment", entity_id: input.entity_id }; if (input.old_value) data.old_value = input.old_value as Prisma.InputJsonValue; if (input.new_value) data.new_value = input.new_value as Prisma.InputJsonValue; await prisma.auditLog.create({ data }); } catch (error) { logger.error({ err: error, paymentId: input.entity_id, action: input.action }, "Failed to write payment audit log"); } }
 
-  private async applyPayment(tx: Prisma.TransactionClient, excludingId: string | null, input: CreatePaymentInput, actorId: string): Promise<PaymentRecord> {
+  private async applyPayment(tx: Prisma.TransactionClient, excludingId: string | null, input: CreatePaymentInput, actorId: string, idempotencyKey?: string): Promise<PaymentRecord> {
     await this.validateTarget(tx, excludingId, input);
-    const payment = await tx.payment.create({ data: { direction: input.direction, amount: d(input.amount), currency: input.currency, payment_date: day(input.payment_date), account_id: input.account_id, method: input.method, allocated_to_type: input.allocated_to_type, allocated_to_id: input.allocated_to_id ?? null, journal_entry_id: input.journal_entry_id ?? null, actual_npr_amount: input.actual_npr_amount == null ? null : d(input.actual_npr_amount) }, include });
+    const payment = await tx.payment.create({ data: { direction: input.direction, amount: d(input.amount), currency: input.currency, payment_date: day(input.payment_date), account_id: input.account_id, method: input.method, allocated_to_type: input.allocated_to_type, allocated_to_id: input.allocated_to_id ?? null, journal_entry_id: input.journal_entry_id ?? null, idempotency_key: idempotencyKey ?? null, actual_npr_amount: input.actual_npr_amount == null ? null : d(input.actual_npr_amount) }, include });
     if (!input.journal_entry_id) { const journal = await this.postPaymentJournal(tx, payment.id, excludingId, input, actorId); return tx.payment.update({ where: { id: payment.id }, data: { journal_entry_id: journal.id }, include }); }
     if (input.allocated_to_type === "invoice" && input.allocated_to_id) await this.adjustInvoice(tx, input.allocated_to_id, d(input.amount));
     return payment;
@@ -72,6 +85,8 @@ export class PaymentsRepository implements IPaymentsRepository {
   }
 
   private async removePaymentEffect(tx: Prisma.TransactionClient, current: Payment): Promise<void> { if (current.allocated_to_type === "invoice" && current.allocated_to_id) await this.adjustInvoice(tx, current.allocated_to_id, d(current.amount).neg()); }
+  private async findByIdempotencyKey(idempotencyKey: string): Promise<PaymentRecord | null> { return prisma.payment.findUnique({ where: { idempotency_key: idempotencyKey }, include }); }
+  private returnExistingOrConflict(existing: PaymentRecord, input: CreatePaymentInput): PaymentRecord { if (existing.direction !== input.direction || !d(existing.amount).eq(d(input.amount)) || existing.currency !== input.currency || existing.payment_date.toISOString().slice(0, 10) !== input.payment_date || existing.account_id !== input.account_id || existing.method !== input.method || existing.allocated_to_type !== input.allocated_to_type || existing.allocated_to_id !== (input.allocated_to_id ?? null)) throw new ConflictError("Idempotency-Key was already used for a different payment"); return existing; }
   private async adjustInvoice(tx: Prisma.TransactionClient, id: string, delta: Prisma.Decimal): Promise<void> { await tx.$queryRaw`SELECT id FROM "Invoice" WHERE id = ${id} FOR UPDATE`; const invoice = await tx.invoice.findUnique({ where: { id } }); if (!invoice) throw new NotFoundError("Invoice allocation target was not found"); if (invoice.status === "void") throw new ConflictError("Void invoices cannot be adjusted"); const paid = d(invoice.paid_amount).plus(delta); if (paid.lt(0)) throw new BadRequestError("Invoice paid amount cannot become negative"); const status = paid.eq(0) ? "sent" : paid.eq(invoice.total_amount) ? "paid" : "partially_paid"; await tx.invoice.update({ where: { id }, data: { paid_amount: paid, status } }); }
   private mapError(error: unknown, message: string): never { if (error instanceof ConflictError || error instanceof BadRequestError || error instanceof NotFoundError) throw error; logger.error({ err: error }, message); throw new InternalServerError(message); }
 }

@@ -121,6 +121,7 @@ export class RefreshTokenService {
       userId: user.id,
       role: user.role,
       email: user.email,
+      mustChangePassword: user.must_change_password,
     });
 
     logger.info(

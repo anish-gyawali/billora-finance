@@ -40,13 +40,24 @@ export const requireAuth = async (
     }
 
     // 3. Verify JWT
+    let payload: AccessTokenPayload;
     try {
-      const payload = verifyAccessToken(token);
-      req.user = payload;
-      return next();
+      payload = verifyAccessToken(token);
     } catch {
       throw new UnauthorizedError("Session expired or invalid token. Please refresh or log in again.");
     }
+
+    req.user = payload;
+
+    const requestPath = req.originalUrl.split("?")[0];
+    const isPasswordChangeRequest =
+      requestPath === "/api/auth/change-password" || requestPath === "/auth/change-password";
+
+    if (payload.mustChangePassword && !isPasswordChangeRequest) {
+      throw new ForbiddenError("You must change your temporary password before continuing");
+    }
+
+    return next();
   } catch (error) {
     return next(error);
   }

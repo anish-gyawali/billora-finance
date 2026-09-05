@@ -58,6 +58,7 @@ export class LoginService {
       userId: user.id,
       role: user.role,
       email: user.email,
+      mustChangePassword: user.must_change_password,
     });
 
     // 5. Sign JWT refresh token (7 days) and obtain its SHA-256 hash

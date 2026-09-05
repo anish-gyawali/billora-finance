@@ -7,6 +7,7 @@ export interface AccessTokenPayload {
   userId: string;
   role: UserRole;
   email?: string;
+  mustChangePassword?: boolean;
 }
 
 export interface RefreshTokenPayload {
@@ -33,6 +34,7 @@ export function signAccessToken(payload: AccessTokenPayload): string {
       userId: payload.userId,
       role: payload.role,
       ...(payload.email ? { email: payload.email } : {}),
+      ...(payload.mustChangePassword ? { mustChangePassword: true } : {}),
     },
     env.JWT_ACCESS_SECRET,
     {

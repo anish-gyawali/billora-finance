@@ -3,7 +3,7 @@ import type { CreatePaymentInput, QueryPaymentsInput, UpdatePaymentInput } from 
 
 export type PaymentRecord = Payment & { account: Account };
 export interface IPaymentsRepository {
-  create(input: CreatePaymentInput, actorId: string): Promise<PaymentRecord>;
+  create(input: CreatePaymentInput, actorId: string, idempotencyKey?: string): Promise<PaymentRecord>;
   findById(id: string): Promise<PaymentRecord | null>;
   findAll(input: QueryPaymentsInput): Promise<{ payments: PaymentRecord[]; total: number }>;
   update(id: string, input: UpdatePaymentInput, actorId: string): Promise<PaymentRecord>;

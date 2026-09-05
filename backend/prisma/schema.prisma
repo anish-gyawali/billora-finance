@@ -24,6 +24,7 @@ model User {
   pan_number          String?
   monthly_salary      Decimal? @db.Decimal(14, 2)
   is_active           Boolean  @default(true)
+  must_change_password Boolean  @default(false)
   mfa_secret          String?
   refreshTokens RefreshToken[]
   journal_entries JournalEntry[] @relation("JournalEntryCreator")
@@ -316,6 +317,7 @@ model Payment {
   allocated_to_type String
   allocated_to_id   String?
   journal_entry_id  String?
+  idempotency_key   String?          @unique
   actual_npr_amount     Decimal?         @db.Decimal(14, 2)
   @@index([allocated_to_type, allocated_to_id])
   @@index([payment_date])

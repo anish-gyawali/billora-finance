@@ -20,6 +20,7 @@ import { registerRoutes } from "./modules/auth/register/register.routes.js";
 import { loginRoutes } from "./modules/auth/login/login.routes.js";
 import { logoutRoutes } from "./modules/auth/logout/logout.routes.js";
 import { refreshRoutes } from "./modules/auth/token/refresh.routes.js";
+import { passwordRoutes } from "./modules/auth/password/password.routes.js";
 import { accountRoutes } from "./modules/accounts/account.routes.js";
 import { periodRoutes } from "./modules/periods/period.routes.js";
 import { journalEntryRoutes } from "./modules/journals/journal-entry.routes.js";
@@ -52,7 +53,7 @@ app.use(
     origin: env.CORS_ORIGIN.split(",").map((origin) => origin.trim()).filter(Boolean),
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Request-Id", "X-CSRF-Token"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Request-Id", "X-CSRF-Token", "Idempotency-Key"],
   })
 );
 
@@ -72,16 +73,22 @@ app.get(["/api/auth/csrf", "/auth/csrf"], issueCsrfToken);
 app.use(apiLimiter);
 
 
-app.use("/api/auth", registerRoutes);
+if (env.ALLOW_PUBLIC_REGISTRATION) {
+  app.use("/api/auth", registerRoutes);
+}
 app.use("/api/auth", loginRoutes);
 app.use("/api/auth", logoutRoutes);
 app.use("/api/auth", refreshRoutes);
+app.use("/api/auth", passwordRoutes);
 
 // Mirror routes without /api prefix (useful during local dev / mobile clients)
-app.use("/auth", registerRoutes);
+if (env.ALLOW_PUBLIC_REGISTRATION) {
+  app.use("/auth", registerRoutes);
+}
 app.use("/auth", loginRoutes);
 app.use("/auth", logoutRoutes);
 app.use("/auth", refreshRoutes);
+app.use("/auth", passwordRoutes);
 
 // ─── Financial & Accounting Modules ──────────────────────────────────────────
 // Chart of Accounts (/api/chart-of-accounts & /api/accounts)
@@ -173,23 +180,26 @@ app.get("/api/health", async (_req, res) => {
 
 // Root metadata route
 app.get("/", (_req, res) => {
+  const endpoints: Record<string, string> = {
+    health: "/api/health",
+    login: "/api/auth/login",
+    logout: "/api/auth/logout",
+    refresh: "/api/auth/refresh",
+    changePassword: "/api/auth/change-password",
+    me: "/api/auth/me",
+    chartOfAccounts: "/api/chart-of-accounts",
+    periods: "/api/periods",
+    clients: "/api/clients",
+  };
+  if (env.ALLOW_PUBLIC_REGISTRATION) endpoints.register = "/api/auth/register";
+
   res.status(200).json({
     success: true,
     data: {
       service: "billora-finance-api",
       status: "running",
       version: "1.0.0",
-      endpoints: {
-        health: "/api/health",
-        register: "/api/auth/register",
-        login: "/api/auth/login",
-        logout: "/api/auth/logout",
-        refresh: "/api/auth/refresh",
-        me: "/api/auth/me",
-        chartOfAccounts: "/api/chart-of-accounts",
-        periods: "/api/periods",
-        clients: "/api/clients",
-      },
+      endpoints,
     },
   });
 });
