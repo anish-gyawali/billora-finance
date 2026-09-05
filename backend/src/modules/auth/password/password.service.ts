@@ -22,13 +22,14 @@ export class PasswordService {
     const user = await this.repository.findUser(userId);
     if (!user) throw new UnauthorizedError("User account was not found");
     if (!user.is_active) throw new ForbiddenError("Account is inactive");
+    if (!user.must_change_password) throw new ForbiddenError("No temporary password change is required");
 
-    if (!(await bcrypt.compare(input.currentPassword, user.password_hash))) {
-      throw new UnauthorizedError("Current password is incorrect");
+    if (!(await bcrypt.compare(input.temporaryPassword, user.password_hash))) {
+      throw new UnauthorizedError("Temporary password is incorrect");
     }
 
-    if (input.currentPassword === input.newPassword) {
-      throw new WeakPasswordError("New password must be different from the current password");
+    if (input.temporaryPassword === input.newPassword) {
+      throw new WeakPasswordError("New password must be different from the temporary password");
     }
 
     const policyCheck = passwordPolicy.validate(input.newPassword);

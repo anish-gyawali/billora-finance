@@ -4,14 +4,14 @@ const password = z.string().min(10, "Password must be at least 10 characters").m
 
 export const changePasswordSchema = z
   .object({
-    currentPassword: z.string().min(1, "Current password is required").max(128),
+    temporaryPassword: z.string().min(1, "Temporary password is required").max(128),
     newPassword: password,
-    newPasswordConfirm: z.string().min(1, "Password confirmation is required").max(128),
+    confirmNewPassword: z.string().min(1, "New password confirmation is required").max(128),
   })
   .strict()
-  .refine((value) => value.newPassword === value.newPasswordConfirm, {
+  .refine((value) => value.newPassword === value.confirmNewPassword, {
     message: "New passwords do not match",
-    path: ["newPasswordConfirm"],
+    path: ["confirmNewPassword"],
   });
 
 export const resetPasswordSchema = z

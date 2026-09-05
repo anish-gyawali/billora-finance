@@ -8,7 +8,7 @@ Inventory derived from the route modules and mounts in `src/app.ts`. The `/api` 
 - `POST /api/auth/login` | public, auth rate-limited | body: email, password
 - `POST /api/auth/logout` | public/session, auth rate-limited | body: optional csrfToken
 - `POST /api/auth/refresh` | refresh-token cookie, auth rate-limited | no body
-- `POST /api/auth/change-password` | authenticated; required after founder provisioning | body: currentPassword, newPassword, newPasswordConfirm
+- `POST /api/auth/change-password` | authenticated; required after founder provisioning | body: temporaryPassword, newPassword, confirmNewPassword
 - `GET /api/auth/me` | authenticated | no parameters
 
 ## Accounts
