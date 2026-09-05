@@ -28,7 +28,7 @@ export default function Home() {
     <main className="landing-page">
       <nav className="landing-nav" aria-label="Main navigation">
         <Link href="/" className="brand-lockup" aria-label="Billora Technologies home">
-          <Image src="/logo.png" alt="" width={48} height={48} priority className="brand-logo" />
+          <Image src="/logo.png" alt="" width={48} height={48} priority className="brand-logo" style={{ height: "auto" }} />
           <span>
             <strong>Billora</strong>
             <small>Technologies</small>
@@ -105,7 +105,7 @@ export default function Home() {
       </section>
 
       <section className="contact-section" id="contact">
-        <div className="contact-mark"><Image src="/logo.png" alt="Billora Technologies" width={86} height={86} /></div>
+        <div className="contact-mark"><Image src="/logo.png" alt="Billora Technologies" width={86} height={86} style={{ height: "auto" }} /></div>
         <div><div className="section-kicker">Have a good problem?</div><h2>Let&apos;s make <em>something</em> useful.</h2><p>Tell us where you want to go. We&apos;ll help you find the clearest way there.</p></div>
         <Link href="/register" className="button button-dark">Start a conversation <ArrowUpRight size={17} /></Link>
       </section>
