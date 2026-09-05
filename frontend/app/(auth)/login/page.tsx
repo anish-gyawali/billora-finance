@@ -1,5 +1,6 @@
-import Link from "next/link";
+import { AuthShell } from "@/components/auth/auth-shell";
+import { LoginForm } from "@/components/auth/login-form";
 
 export default function LoginPage() {
-  return <main className="flex min-h-screen items-center justify-center bg-background p-6"><div className="w-full max-w-md rounded-xl border bg-card p-8 shadow-sm"><p className="font-brand text-3xl text-secondary">Billora</p><h1 className="mt-8 text-2xl font-semibold">Welcome back</h1><p className="mt-2 text-sm text-slate-500">Secure sign-in will be connected to the Billora Finance backend in the authentication phase.</p><Link className="mt-6 inline-flex rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white" href="/">Back to home</Link></div></main>;
+  return <AuthShell eyebrow="Welcome back" title="Sign in to Billora Finance" description="Your team's financial command center is ready when you are." footerText="New to Billora?" footerLink="Create an account" footerHref="/register"><LoginForm /></AuthShell>;
 }
